@@ -29,6 +29,7 @@ model User {
   id            String        @id @default(cuid())
   name          String
   email         String        @unique
+  role          UserRole      @default(STUDENT)
   emailVerified Boolean       @default(false)
   image         String?
   tutorProfile  TutorProfile?
@@ -69,11 +70,11 @@ model Category {
 }
 
 model Availability {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   tutorId   String
   dayOfWeek String
-  startTime String
-  endTime   String
+  startTime DateTime
+  endTime   DateTime
 
   tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
   createdAt DateTime     @default(now())
@@ -85,8 +86,8 @@ model Booking {
   studentId String
   tutorId   String
   date      DateTime
-  startTime String
-  endTime   String
+  startTime DateTime
+  endTime   DateTime
   status    BookingStatus @default(CONFIRMED)
   subject   String
   notes     String
