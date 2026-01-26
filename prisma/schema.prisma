@@ -12,3 +12,50 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  STUDENT
+  TUTOR
+  ADMIN
+}
+
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now())
+}
+
+model TutorProfile {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  bio          String?
+  subjects     String[]
+  hourlyRate   Float
+  experience   String?
+  education    String?
+  rating       Float    @default(0)
+  totalReviews Int      @default(0)
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bookings     Bookings[]     @relation("TutorBooking")
+  availability Availability[]
+  reviews      Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id   String @id @default(cuid())
+  name String @unique
+}
