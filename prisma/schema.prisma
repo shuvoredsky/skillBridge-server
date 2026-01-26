@@ -56,6 +56,22 @@ model TutorProfile {
 }
 
 model Category {
-  id   String @id @default(cuid())
-  name String @unique
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+}
+
+model Availability {
+  id        String @id @default(cuid())
+  tutorId   String
+  dayOfWeek String
+  startTime String
+  endTime   String
+
+  tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @default(now())
 }
