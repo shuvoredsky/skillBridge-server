@@ -1,14 +1,21 @@
-import express, { Request, Response } from "express";
+import app from "./app";
+import { prisma } from "./lib/prisma"
 
-const app = express()
-const PORT = 5000;
+const port = process.env.PORT || 5000;
 
-app.use(express.json())
+async function main(){
+    try{
+        await prisma.$connect();
+        console.log("Connected to the database successfully")
 
-app.get("/", (req: Request, res: Response)=>{
-    res.send("SkillBridge Server Running")
-})
+        app.listen(port, ()=>{
+            console.log(`Server is running on http://localhost:${port}`)
+        })
+    }catch(error){
+        console.error("An error occurred", error)
+        await prisma.$disconnect();
+        process.exit(1)
+    }
+}
 
-app.listen(PORT, ()=>{
-    console.log(`Server running on http://localhost:${PORT}`)
-})
+main();
