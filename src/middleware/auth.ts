@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import {auth as betterAuth} from "../lib/auth"
+import { UserService } from "../modules/user/user.service";
 export enum UserRole{
   STUDENT = "STUDENT",
   TUTOR = "TUTOR",
@@ -35,13 +36,20 @@ const auth = (...roles: UserRole[]) => {
       if(!session.user.emailVerified){
         return res.status(403).json({ message: "Email veryfiaction required, please verify your email" })
       }
-      
-      req.user={
+
+      const dbUser = await UserService.createUser({
         id: session.user.id,
         email: session.user.email,
         name: session.user.name,
-        role: session.user.role as string,
         emailVerified: session.user.emailVerified
+      })
+      
+      req.user={
+        id: dbUser.id,
+        email: dbUser.email,
+        name: dbUser.name,
+        role: dbUser.role,
+        emailVerified: dbUser.emailVerified
       }
 
       if(roles.length && !roles.includes(req.user.role as UserRole)){

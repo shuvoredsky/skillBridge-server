@@ -1,5 +1,5 @@
-import { UserRole } from "../../generated/prisma/enums";
-import { prisma } from "../lib/prisma";
+import { UserRole } from "../../../generated/prisma/enums";
+import { prisma } from "../../lib/prisma";
 
 const createUser = async (sessionUser: {
     id: string;
