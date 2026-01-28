@@ -37,20 +37,14 @@ const auth = (...roles: UserRole[]) => {
         return res.status(403).json({ message: "Email veryfiaction required, please verify your email" })
       }
 
-      const dbUser = await UserService.createUser({
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-        emailVerified: session.user.emailVerified
-      })
       
-      req.user={
-        id: dbUser.id,
-        email: dbUser.email,
-        name: dbUser.name,
-        role: dbUser.role,
-        emailVerified: dbUser.emailVerified
-      }
+req.user = {
+  id: session.user.id,
+  email: session.user.email,
+  name: session.user.name,
+  role: session.user.role as string,
+  emailVerified: session.user.emailVerified
+}
 
       if(roles.length && !roles.includes(req.user.role as UserRole)){
         return res.status(403).json({ message: "Forbidden: you don't have permission to access this resources" })
