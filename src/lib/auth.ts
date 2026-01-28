@@ -32,18 +32,23 @@ export const auth = betterAuth({
                 type:"string",
                 required: false
             },
-            status:{
-                type:"string",
-                defaultValue:"ACTIVE",
-                required: false
-            }
+            // status:{
+            //     type:"string",
+            //     defaultValue:"ACTIVE",
+            //     required: false
+            // }
         }
     },
-    emailAndPassword: { 
-    enabled: true, 
-    autoSignIn: false,
-    requireEmailVerification:true
-  }, 
+
+   emailAndPassword: {
+  enabled: true,
+  autoSignIn: false,
+  requireEmailVerification: true,
+  account: {
+    type: "credentials",   
+  },
+},
+
   emailVerification: {
     sendOnSignUp: true,
     autoSignInAfterVerification:true,
