@@ -36,7 +36,7 @@ const updateAvailability = async (
     }
 
     return prisma.availability.update({
-        where:{id: availability},
+        where:{id: availabilityId},
         data: payload,
     })
 
