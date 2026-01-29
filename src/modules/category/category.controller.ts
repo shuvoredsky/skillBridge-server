@@ -22,7 +22,7 @@ const getAllCategories = async (
 ) =>{
     try{
         const result = await CategoryService.getAllCategories()
-        res.status(201).json(result)
+        res.status(200).json(result)
     }catch(error){
         next(error)
     }
