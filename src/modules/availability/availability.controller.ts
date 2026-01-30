@@ -10,9 +10,9 @@ const createAvailability = async (
   try {
     const user = req.user;
 
-    if (!user || user.role !== "TUTOR") {
-      return res.status(403).json({ message: "Only tutors can set availability" });
-    }
+    if (!user) {  
+  return res.status(401).json({ message: "Unauthorized" });
+}
 
     const tutorProfile = await prisma.tutorProfile.findUnique({
       where: { userId: user.id },

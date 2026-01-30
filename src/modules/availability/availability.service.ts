@@ -2,8 +2,8 @@ import { prisma } from "../../lib/prisma";
 
 type AvaiablityPayload = {
     dayOfWeek: string;
-    startTime: Date;
-    endTime: Date;
+    startTime: string;
+    endTime: string;
 }
 
 const createAvailability = async (
