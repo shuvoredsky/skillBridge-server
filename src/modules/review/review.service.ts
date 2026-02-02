@@ -48,7 +48,7 @@ const createReview = async (
         studentId,
         tutorId: booking.tutorId,
         rating: payload.rating,
-        comment: payload.comment,
+        comment: payload.comment as string,
       },
       include: {
         student: {
