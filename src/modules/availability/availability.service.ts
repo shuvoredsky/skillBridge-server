@@ -9,15 +9,19 @@ type AvaiablityPayload = {
 const createAvailability = async (
     tutorId: string,
     payload: AvaiablityPayload
-)=>{
+) => {
+
+    const today = new Date().toISOString().split('T')[0];
 
     return prisma.availability.create({
         data: {
             tutorId,
-            ...payload
+            dayOfWeek: payload.dayOfWeek,
+            
+            startTime: new Date(`${today}T${payload.startTime}:00Z`),
+            endTime: new Date(`${today}T${payload.endTime}:00Z`),
         }
-    })
-
+    });
 }
 
 

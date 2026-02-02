@@ -32,11 +32,7 @@ export const auth = betterAuth({
                 type:"string",
                 required: false
             },
-            // status:{
-            //     type:"string",
-            //     defaultValue:"ACTIVE",
-            //     required: false
-            // }
+           
         }
     },
 
@@ -56,7 +52,7 @@ export const auth = betterAuth({
        try {
         const verificationUrl = `${process.env.APP_URL}/verify-email?token=${token}`
     const info = await transporter.sendMail({
-      from: '"Prisma Blog" <prisma@blog.com>', 
+      from: '"SkillBridge" <no-reply@skillbridge.com>',
       to: user.email, 
       subject: "Plese verify your email", 
       html: `<!DOCTYPE html>
@@ -75,9 +71,7 @@ export const auth = betterAuth({
             <!-- Header -->
             <tr>
               <td style="background-color:#111827; padding:20px; text-align:center;">
-                <h1 style="color:#ffffff; margin:0; font-size:24px;">
-                  Prisma Blog
-                </h1>
+               <h1 style="color:#ffffff; margin:0; font-size:24px;">SkillBridge</h1>
               </td>
             </tr>
 
@@ -89,7 +83,7 @@ export const auth = betterAuth({
                 </h2>
 
                 <p style="color:#374151; font-size:16px; line-height:1.6;">
-                  Thanks for signing up for <strong>Prisma Blog</strong>!  
+                  Thanks for signing up for <strong>SillBridge</strong>!  
                   Please confirm your email address by clicking the button below.
                 </p>
 
@@ -128,10 +122,9 @@ export const auth = betterAuth({
             <!-- Footer -->
             <tr>
               <td style="background-color:#f9fafb; padding:20px; text-align:center; font-size:12px; color:#6b7280;">
-                © 2025 Prisma Blog. All rights reserved.
+                © 2025 SkillBridge. All rights reserved.
               </td>
             </tr>
-
           </table>
         </td>
       </tr>
