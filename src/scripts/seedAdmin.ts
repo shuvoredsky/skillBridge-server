@@ -25,13 +25,13 @@ async function seedAdmin(){
         const signUpAdmin = await fetch("http://localhost:5000/api/auth/sign-up/email", {
             method: "POST",
             headers:{
-                "Content-Type": 'application/json'
+                "Content-Type": 'application/json',
+                "Origin": "http://localhost:3000"
             },
             body:JSON.stringify(adminData)
         })
 
         
-        // console.log(signUpAdmin)
 
         if(signUpAdmin.ok){
             console.log("****ADMIN Creted*****")

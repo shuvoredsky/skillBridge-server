@@ -4,8 +4,8 @@ import { AdminController } from "./admin.controller";
 
 const router = express.Router();
 
-
 router.get("/users", auth(UserRole.ADMIN), AdminController.getAllUsers);
+
 
 router.patch(
   "/users/:id/status",
