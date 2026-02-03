@@ -16,41 +16,15 @@ import { adminRouter } from "./modules/admin/admin.route";
 
 const app = express();
 
-
-const allowedOrigins = [
-  process.env.APP_URL || "http://localhost:3000",
-  process.env.PROD_APP_URL, 
-].filter(Boolean); 
-
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      
-      if (!origin) return callback(null, true);
-
-      
-      const isAllowed =
-        allowedOrigins.includes(origin) ||
-        /^https:\/\/.*\.vercel\.app$/.test(origin); 
-
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        callback(new Error(`Origin ${origin} not allowed by CORS`));
-      }
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
-    exposedHeaders: ["Set-Cookie"],
-  }),
-);
-
+app.use(cors({
+    origin: process.env.APP_URL || "http://localhost:3000",
+    credentials: true
+}))
 app.use(express.json());
 
 app.all('/api/auth/*splat', toNodeHandler(auth));
 
-
+// Use all routes directly
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/tutors", tutorRouter);
 app.use("/api/v1/categories", categoryRouter);
@@ -63,8 +37,7 @@ app.get("/", (req, res) => {
   res.send("SkillBridge API is running");
 });
 
-
-app.use(errorHandler)
 app.use(notFound)
+app.use(errorHandler)
 
 export default app;
