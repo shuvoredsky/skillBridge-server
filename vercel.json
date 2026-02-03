@@ -8,15 +8,7 @@
   ],
   "routes": [
     {
-      "src": "/api/auth/(.*)",
-      "dest": "api/server.mjs"
-    },
-    {
-      "src": "/api/v1/(.*)",
-      "dest": "api/server.mjs"
-    },
-    {
-      "src": "/",
+      "src": "/(.*)",
       "dest": "api/server.mjs"
     }
   ]
