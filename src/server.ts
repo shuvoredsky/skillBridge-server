@@ -8,11 +8,11 @@ prisma.$connect().catch((err) => {
   console.error("Failed to connect to the database:", err);
 });
 
-if (process.env.NODE_ENV !== "production") {
+
   app.listen(port, () => {
     console.log(`Server is running on http://localhost:${port}`);
   });
-}
+
 
 
 export default app;

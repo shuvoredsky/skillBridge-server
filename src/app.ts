@@ -24,7 +24,7 @@ app.use(express.json());
 
 app.all('/api/auth/*splat', toNodeHandler(auth));
 
-// Use all routes directly
+
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/tutors", tutorRouter);
 app.use("/api/v1/categories", categoryRouter);
