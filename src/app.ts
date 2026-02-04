@@ -4,8 +4,6 @@ import { auth } from "./lib/auth";
 import cors from 'cors'
 import errorHandler from "./middleware/globalErrorHandler";
 import { notFound } from "./middleware/notFound";
-
-
 import { userRouter } from "./modules/user/user.route";
 import { tutorRouter } from "./modules/tutor/tutor.route";
 import { categoryRouter } from "./modules/category/category.route";
