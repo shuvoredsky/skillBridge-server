@@ -11,22 +11,33 @@ import { availabilityRouter } from "./modules/availability/availability.route";
 import { bookingRouter } from "./modules/booking/booking.route";
 import { reviewRouter } from "./modules/review/review.route";
 import { adminRouter } from "./modules/admin/admin.route";
-// import { authVerifyRouter } from "./modules/auth/auth.route";
 
 const app = express();
 
+const allowedOrigins = [
+    "https://skill-bridge-client-zeta.vercel.app",
+    process.env.APP_URL 
+].filter(Boolean); 
+
 app.use(cors({
-    origin: process.env.APP_URL || "http://localhost:3000",
+    origin: function (origin, callback) {
+      
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true
-}))
+}));
+
 app.use(express.json());
 
 app.all('/api/auth/*splat', toNodeHandler(auth));
 
-
 app.use("/api/v1/users", userRouter);
-// app.use("/api/auth", authVerifyRouter);
-// app.use("/api/verification", authVerifyRouter);
 app.use("/api/v1/tutors", tutorRouter);
 app.use("/api/v1/categories", categoryRouter);
 app.use("/api/v1/availability", availabilityRouter);
