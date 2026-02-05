@@ -19,7 +19,7 @@ export const verifyEmail = async (
 
     const verification = await prisma.verification.findFirst({
       where: {
-        token,
+        value: token,
         expiresAt: {
           gt: new Date(),
         },
@@ -35,8 +35,10 @@ export const verifyEmail = async (
       });
     }
 
+    const userEmail = verification.identifier;
+
     const user = await prisma.user.update({
-      where: { id: verification.userId },
+      where: { email: userEmail },
       data: { emailVerified: true },
     });
 

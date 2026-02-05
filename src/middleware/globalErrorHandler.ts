@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express"
-import { Prisma } from "../../generated/prisma/client";
+// সঠিক ইমপোর্ট
+import { Prisma } from '@prisma/client';
 
 
 function errorHandler (err:any, req:Request, res:Response, next: NextFunction){
