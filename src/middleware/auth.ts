@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import {auth as betterAuth} from "../lib/auth"
 import { UserService } from "../modules/user/user.service";
+
 export enum UserRole{
   STUDENT = "STUDENT",
   TUTOR = "TUTOR",
@@ -28,36 +29,30 @@ const auth = (...roles: UserRole[]) => {
         headers: req.headers as any
       })
       
-      
       if (!session) {
         return res.status(401).json({ message: "Unauthorized" })
       }
 
-      if(!session.user.emailVerified){
-        return res.status(403).json({ message: "Email veryfiaction required, please verify your email" })
-      }
+      // ✅ Removed email verification check
+      // if(!session.user.emailVerified){
+      //   return res.status(403).json({ message: "Email verification required, please verify your email" })
+      // }
 
-      
-req.user = {
-  id: session.user.id,
-  email: session.user.email,
-  name: session.user.name,
-  role: session.user.role as string,
-  emailVerified: session.user.emailVerified
-}
+      req.user = {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+        role: session.user.role as string,
+        emailVerified: session.user.emailVerified
+      }
 
       if(roles.length && !roles.includes(req.user.role as UserRole)){
-        return res.status(403).json({ message: "Forbidden: you don't have permission to access this resources" })
+        return res.status(403).json({ message: "Forbidden: you don't have permission to access this resource" })
       }
-      
 
-
-      
       next() 
     } catch (error) {
-        next(error)
-      console.error(error)
-      res.status(500).json({ message: "Server error" })
+      next(error)
     }
   }
 }
