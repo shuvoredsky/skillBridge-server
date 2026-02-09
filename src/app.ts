@@ -1,7 +1,8 @@
 import express from "express";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "./lib/auth";
-import cors from 'cors'
+import cors from 'cors';
+import cookieParser from 'cookie-parser'; // ✅ ADD THIS
 import errorHandler from "./middleware/globalErrorHandler";
 import { notFound } from "./middleware/notFound";
 import { userRouter } from "./modules/user/user.route";
@@ -14,26 +15,42 @@ import { adminRouter } from "./modules/admin/admin.route";
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 const allowedOrigins = [
-    "https://skill-bridge-client-zeta.vercel.app",
-    process.env.APP_URL 
+    process.env.APP_URL,
+    "http://localhost:3000",
+    "http://localhost:3001",
 ].filter(Boolean); 
 
 app.use(cors({
     origin: function (origin, callback) {
-      
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.includes(origin)) {
+        if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
+            console.log('❌ CORS blocked:', origin);
             callback(new Error('Not allowed by CORS'));
         }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
 }));
 
 app.use(express.json());
+app.use(cookieParser()); // ✅ ADD THIS - Very Important!
+
+// ✅ Debugging middleware (remove after fixing)
+app.use((req, res, next) => {
+    console.log('📥 Request:', {
+        method: req.method,
+        url: req.url,
+        origin: req.headers.origin,
+        hasCookie: !!req.headers.cookie,
+        cookies: req.cookies, // Now this will work
+    });
+    next();
+});
 
 app.all('/api/auth/*splat', toNodeHandler(auth));
 
@@ -49,7 +66,7 @@ app.get("/", (req, res) => {
   res.send("SkillBridge API is running");
 });
 
-app.use(notFound)
-app.use(errorHandler)
+app.use(notFound);
+app.use(errorHandler);
 
 export default app;

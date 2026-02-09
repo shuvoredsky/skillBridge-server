@@ -7,7 +7,15 @@ export const auth = betterAuth({
     database: prismaAdapter(prisma, {
         provider: "postgresql", 
     }),
-    trustedOrigins:[process.env.APP_URL!],
+    
+    trustedOrigins: [
+        process.env.APP_URL!,
+        "http://localhost:3000",
+        "http://localhost:3001",
+    ].filter(Boolean),
+    
+    baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
+    
     user:{
         additionalFields:{
             role:{
@@ -22,17 +30,11 @@ export const auth = betterAuth({
         }
     },
 
-   emailAndPassword: {
+    emailAndPassword: {
         enabled: true,
-        autoSignIn: true,  // ✅ Changed from false to true
-        requireEmailVerification: false,  // ✅ Changed from true to false
-        account: {
-            type: "credentials",   
-        },
+        autoSignIn: true,
+        requireEmailVerification: false,
     },
-
-    // ✅ Remove entire emailVerification block
-    // emailVerification: { ... } ← Delete this entire section
 
     socialProviders: {
         google: { 
@@ -41,5 +43,12 @@ export const auth = betterAuth({
             clientId: process.env.GOOGLE_CLIENT_ID as string, 
             clientSecret: process.env.GOOGLE_CLIENT_SECRET as string, 
         }, 
+    },
+    
+    session: {
+        cookieCache: {
+            enabled: true,
+            maxAge: 5 * 60,
+        },
     },
 });
