@@ -8,7 +8,6 @@ const getMe = async (userId: string) => {
       name: true,
       email: true,
       role: true,
-      emailVerified: true,
       image: true,
       createdAt: true,
       updatedAt: true

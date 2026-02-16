@@ -21,6 +21,7 @@ const allowedOrigins = [
     process.env.APP_URL,
     "http://localhost:3000",
     "http://localhost:3001",
+    "https://skill-bridge-client-zeta.vercel.app", 
 ].filter(Boolean); 
 
 app.use(cors({

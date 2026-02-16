@@ -12,6 +12,7 @@ export const auth = betterAuth({
         process.env.APP_URL!,
         "http://localhost:3000",
         "http://localhost:3001",
+        "https://skillbridge-server-q.onrender.com", // Add your production server URL if needed
     ].filter(Boolean),
     
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
@@ -49,6 +50,10 @@ export const auth = betterAuth({
         cookieCache: {
             enabled: true,
             maxAge: 5 * 60,
+        },
+        cookie: {
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            secure: process.env.NODE_ENV === 'production',
         },
     },
 });

@@ -30,7 +30,6 @@ const getAllUsers = async (filters: {
       name: true,
       email: true,
       role: true,
-      emailVerified: true,
       image: true,
       phone: true,
       createdAt: true,
