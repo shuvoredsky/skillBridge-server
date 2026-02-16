@@ -7,10 +7,10 @@ export default defineConfig({
   target: "node20",
   outDir: "api",
   external: ["pg-native"],
-  skipNodeModulesBundle: true, // Prevents bundling node_modules (Avoids Vercel crashes)
-  shims: true, // Fixes __dirname and other ESM compatibility issues
+  skipNodeModulesBundle: true, 
+  shims: true, 
   outExtension() {
-    return { js: ".mjs" }; // Outputs server.mjs
+    return { js: ".mjs" }; 
   },
-  clean: true, // Clears the api/ folder before every build
+  clean: true, 
 });
