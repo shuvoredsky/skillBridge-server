@@ -12,7 +12,7 @@ export const auth = betterAuth({
         process.env.APP_URL!,
         "http://localhost:3000",
         "http://localhost:3001",
-        "https://skillbridge-server-q.onrender.com", // Add your production server URL if needed
+        "https://skillbridge-server-q.onrender.com", 
     ].filter(Boolean),
     
     baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
