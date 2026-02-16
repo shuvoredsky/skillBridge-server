@@ -1,6 +1,5 @@
 import { NextFunction, Request, Response } from "express";
 import {auth as betterAuth} from "../lib/auth"
-import { UserService } from "../modules/user/user.service";
 
 export enum UserRole{
   STUDENT = "STUDENT",
@@ -16,7 +15,6 @@ declare global{
         email: string;
         name: string;
         role: string;
-        emailVerified: boolean;
       }
     }
   }
@@ -25,29 +23,13 @@ declare global{
 const auth = (...roles: UserRole[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      // ✅ FIX: Better way to get session
       const session = await betterAuth.api.getSession({
         headers: req.headers as any,
       });
 
-      console.log("🔐 Auth Check:", {
-        hasSession: !!session,
-        headers: req.headers.cookie ? "Cookie present" : "No cookie",
-        origin: req.headers.origin,
-      });
-      
-      if (!session) {
-        console.log("❌ No session found");
+      if (!session?.user) {
         return res.status(401).json({ 
-          message: "Unauthorized - No valid session" 
-        });
-      }
-
-      // ✅ Additional validation
-      if (!session.user) {
-        console.log("❌ Session exists but no user");
-        return res.status(401).json({ 
-          message: "Unauthorized - Invalid session" 
+          message: "Unauthorized - Please login" 
         });
       }
 
@@ -56,13 +38,9 @@ const auth = (...roles: UserRole[]) => {
         email: session.user.email,
         name: session.user.name,
         role: session.user.role as string,
-        emailVerified: session.user.emailVerified
       };
 
-      console.log("✅ User authenticated:", req.user.email, req.user.role);
-
       if(roles.length && !roles.includes(req.user.role as UserRole)){
-        console.log("❌ Forbidden:", req.user.role, "not in", roles);
         return res.status(403).json({ 
           message: "Forbidden: you don't have permission to access this resource" 
         });
@@ -70,10 +48,9 @@ const auth = (...roles: UserRole[]) => {
 
       next();
     } catch (error) {
-      console.error("❌ Auth error:", error);
+      console.error("Auth error:", error);
       return res.status(401).json({ 
-        message: "Authentication error",
-        error: process.env.NODE_ENV === "development" ? error : undefined
+        message: "Authentication error"
       });
     }
   }

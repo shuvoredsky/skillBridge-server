@@ -7,21 +7,20 @@ datasource db {
 }
 
 model User {
-  id            String        @id @default(cuid())
-  name          String
-  email         String        @unique
-  role          UserRole      @default(STUDENT)
-  status        UserStatus    @default(ACTIVE)
-  emailVerified Boolean       @default(false)
-  image         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @default(now())
-  phone         String?
-  accounts      Account[]
-  bookings      Booking[]     @relation("StudentBookings")
-  reviews       Review[]
-  Session       Session[]
-  tutorProfile  TutorProfile?
+  id           String        @id @default(cuid())
+  name         String
+  email        String        @unique
+  role         UserRole      @default(STUDENT)
+  status       UserStatus    @default(ACTIVE)
+  image        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @default(now())
+  phone        String?
+  accounts     Account[]
+  bookings     Booking[]     @relation("StudentBookings")
+  reviews      Review[]
+  Session      Session[]
+  tutorProfile TutorProfile?
 }
 
 model Account {
