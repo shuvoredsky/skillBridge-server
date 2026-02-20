@@ -3,7 +3,7 @@ import { UserRole } from "../middleware/auth"
 
 async function seedAdmin(){
     try{
-        console.log('*******Admin seeding started*********')
+        console.log('*******Admin started*********')
         const adminData = {
             name: "Admin shuvo",
             email: "admin@admin.com",
@@ -11,7 +11,7 @@ async function seedAdmin(){
             password: "admin1234"
         }
 
-        console.log('*******Checking if admin exists*********')
+        console.log('*******Checking admin exist or not*********')
         const existingUser = await prisma.user.findUnique({
             where: {
                 email: adminData.email
@@ -19,8 +19,7 @@ async function seedAdmin(){
         })
 
         if(existingUser){
-            console.log("Admin already exists")
-            return
+            throw new Error("User alrady exists in db")
         }
 
         const signUpAdmin = await fetch("http://localhost:5000/api/auth/sign-up/email", {
@@ -32,14 +31,25 @@ async function seedAdmin(){
             body:JSON.stringify(adminData)
         })
 
+        
+
         if(signUpAdmin.ok){
-            console.log("****ADMIN Created Successfully*****")
-        } else {
-            console.error("Failed to create admin")
+            console.log("****ADMIN Creted*****")
+            await prisma.user.update({
+                where:{
+                    email: adminData.email
+                },
+                data:{
+                    emailVerified: true   
+                }
+            })
+            console.log("****Email verification updated*****")
         }
 
+        console.log("***Success***")
+
     }catch(error){
-        console.error("Seed error:", error)
+        console.error(error)
     }
 }
 
