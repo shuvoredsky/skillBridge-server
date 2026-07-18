@@ -16,6 +16,21 @@ const getMe = async (userId: string) => {
   });
 }
 
+const getUserById = async (id: string) => {
+  return prisma.user.findUnique({
+    where: { id },
+  });
+};
+
+const updateUserProfilePhoto = async (id: string, profilePhoto: string) => {
+  return prisma.user.update({
+    where: { id },
+    data: { profilePhoto },
+  });
+};
+
 export const UserService = {
-  getMe
+  getMe,
+  getUserById,
+  updateUserProfilePhoto
 }

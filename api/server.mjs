@@ -1,5 +1,5 @@
 // src/app.ts
-import express8 from "express";
+import express11 from "express";
 import { toNodeHandler } from "better-auth/node";
 
 // src/lib/auth.ts
@@ -23,6 +23,33 @@ var auth = betterAuth({
     provider: "postgresql"
   }),
   plugins: [bearer()],
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          try {
+            const admins = await prisma.user.findMany({
+              where: { role: "ADMIN" }
+            });
+            for (const admin of admins) {
+              await prisma.notification.create({
+                data: {
+                  receiverId: admin.id,
+                  receiverRole: "ADMIN",
+                  title: "New User Registered",
+                  message: `A new user has registered: ${user.name || user.email} (${user.role}).`,
+                  type: "NEW_USER_REGISTERED",
+                  relatedId: user.id
+                }
+              });
+            }
+          } catch (err) {
+            console.error("Failed to create registration notification:", err);
+          }
+        }
+      }
+    }
+  },
   trustedOrigins: [
     process.env.APP_URL,
     "http://localhost:3000",
@@ -190,11 +217,26 @@ var getMe = async (userId) => {
     }
   });
 };
+var getUserById = async (id) => {
+  return prisma.user.findUnique({
+    where: { id }
+  });
+};
+var updateUserProfilePhoto = async (id, profilePhoto) => {
+  return prisma.user.update({
+    where: { id },
+    data: { profilePhoto }
+  });
+};
 var UserService = {
-  getMe
+  getMe,
+  getUserById,
+  updateUserProfilePhoto
 };
 
 // src/modules/user/user.controller.ts
+import fs from "fs";
+import path from "path";
 var getMe2 = async (req, res, next) => {
   try {
     const user = req.user;
@@ -209,8 +251,115 @@ var getMe2 = async (req, res, next) => {
     next(error);
   }
 };
+var uploadPhoto = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded or file type is invalid." });
+    }
+    const user = await UserService.getUserById(id);
+    if (!user) {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on invalid user ID:", err));
+      }
+      return res.status(404).json({ message: "Student not found" });
+    }
+    if (user.role !== "STUDENT") {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on non-student ID:", err));
+      }
+      return res.status(400).json({ message: "User is not a student" });
+    }
+    if (user.profilePhoto) {
+      const oldPath = path.join(process.cwd(), user.profilePhoto);
+      if (fs.existsSync(oldPath)) {
+        await fs.promises.unlink(oldPath).catch((err) => console.error("Failed to delete old student photo:", err));
+      }
+    }
+    const relativePath = `/uploads/students/${req.file.filename}`;
+    await UserService.updateUserProfilePhoto(id, relativePath);
+    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    res.status(200).json({
+      message: "Student profile photo uploaded successfully",
+      profilePhoto: relativePath,
+      profilePhotoUrl: photoUrl
+    });
+  } catch (error) {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on error:", err));
+    }
+    next(error);
+  }
+};
 var UserController = {
-  getMe: getMe2
+  getMe: getMe2,
+  uploadPhoto
+};
+
+// src/config/multer.ts
+import multer from "multer";
+import path2 from "path";
+import fs2 from "fs";
+var createMulterUpload = (destination) => {
+  const uploadPath = path2.join(process.cwd(), "uploads", destination);
+  if (!fs2.existsSync(uploadPath)) {
+    fs2.mkdirSync(uploadPath, { recursive: true });
+  }
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      const fileExt = path2.extname(file.originalname).toLowerCase();
+      const userId = req.params.id ? req.params.id.replace(/[^a-zA-Z0-9_-]/g, "") : "unknown";
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      cb(null, `${userId}-${uniqueSuffix}${fileExt}`);
+    }
+  });
+  const fileFilter = (req, file, cb) => {
+    const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
+    const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
+    const fileExt = path2.extname(file.originalname).toLowerCase();
+    if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(fileExt)) {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPEG, PNG, and WebP images are allowed."));
+    }
+  };
+  return multer({
+    storage,
+    fileFilter,
+    limits: {
+      fileSize: 5 * 1024 * 1024
+      // 5MB limit
+    }
+  });
+};
+var uploadSingle = (destination, fieldName) => {
+  const upload = createMulterUpload(destination).single(fieldName);
+  return (req, res, next) => {
+    upload(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(400).json({
+              message: "File is too large. Maximum size allowed is 5MB.",
+              error: err.message
+            });
+          }
+          return res.status(400).json({
+            message: "File upload protocol error.",
+            error: err.message
+          });
+        }
+        return res.status(400).json({
+          message: err.message || "Invalid file or upload error.",
+          error: err.message || err
+        });
+      }
+      next();
+    });
+  };
 };
 
 // src/modules/user/user.route.ts
@@ -220,10 +369,54 @@ router.get(
   auth_default("STUDENT" /* STUDENT */, "ADMIN" /* ADMIN */, "TUTOR" /* TUTOR */),
   UserController.getMe
 );
+router.post(
+  "/:id/upload-photo",
+  uploadSingle("students", "photo"),
+  UserController.uploadPhoto
+);
 var userRouter = router;
 
 // src/modules/tutor/tutor.route.ts
 import express2 from "express";
+
+// src/modules/notification/notification.service.ts
+var createNotification = async (payload) => {
+  return prisma.notification.create({
+    data: payload
+  });
+};
+var getNotifications = async (receiverId) => {
+  return prisma.notification.findMany({
+    where: { receiverId },
+    orderBy: { createdAt: "desc" },
+    take: 50
+  });
+};
+var getUnreadCount = async (receiverId) => {
+  return prisma.notification.count({
+    where: {
+      receiverId,
+      isRead: false
+    }
+  });
+};
+var markAllRead = async (receiverId) => {
+  return prisma.notification.updateMany({
+    where: {
+      receiverId,
+      isRead: false
+    },
+    data: {
+      isRead: true
+    }
+  });
+};
+var NotificationService = {
+  createNotification,
+  getNotifications,
+  getUnreadCount,
+  markAllRead
+};
 
 // src/modules/tutor/tutor.service.ts
 var createTutorProfile = async (userId, payload) => {
@@ -241,6 +434,9 @@ var createTutorProfile = async (userId, payload) => {
       data: {
         userId,
         ...payload
+      },
+      include: {
+        user: true
       }
     });
     await tx.user.update({
@@ -251,12 +447,30 @@ var createTutorProfile = async (userId, payload) => {
     });
     return profile;
   });
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" }
+  });
+  for (const admin of admins) {
+    await NotificationService.createNotification({
+      receiverId: admin.id,
+      receiverRole: "ADMIN",
+      title: "New Tutor Registered",
+      message: `A new tutor has registered: ${tutorProfile.user.name || tutorProfile.user.email}.`,
+      type: "NEW_TUTOR_REGISTERED",
+      relatedId: tutorProfile.id
+    });
+  }
   return tutorProfile;
 };
 var getAllTutors = async (filters) => {
-  const where = {};
+  const where = {
+    user: {
+      status: "ACTIVE"
+    }
+  };
   if (filters.search) {
     where.user = {
+      ...where.user,
       name: {
         contains: filters.search,
         mode: "insensitive"
@@ -286,7 +500,8 @@ var getAllTutors = async (filters) => {
           id: true,
           name: true,
           email: true,
-          image: true
+          image: true,
+          status: true
         }
       }
     },
@@ -346,15 +561,30 @@ var getTutorById = async (tutorId) => {
     }
   });
 };
+var getTutorProfileOnly = async (id) => {
+  return prisma.tutorProfile.findUnique({
+    where: { id }
+  });
+};
+var updateTutorProfilePhoto = async (id, profilePhoto) => {
+  return prisma.tutorProfile.update({
+    where: { id },
+    data: { profilePhoto }
+  });
+};
 var TutorService = {
   createTutorProfile,
   getAllTutors,
   getMyTutorProfile,
   getTutorById,
-  updateTutorProfile
+  updateTutorProfile,
+  getTutorProfileOnly,
+  updateTutorProfilePhoto
 };
 
 // src/modules/tutor/tutor.controller.ts
+import fs3 from "fs";
+import path3 from "path";
 var createTutorProfile2 = async (req, res, next) => {
   try {
     const user = req.user;
@@ -422,12 +652,47 @@ var getTutorById2 = async (req, res, next) => {
     next(error);
   }
 };
+var uploadPhoto2 = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded or file type is invalid." });
+    }
+    const tutorProfile = await TutorService.getTutorProfileOnly(id);
+    if (!tutorProfile) {
+      if (req.file.path && fs3.existsSync(req.file.path)) {
+        await fs3.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on invalid tutor ID:", err));
+      }
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+    if (tutorProfile.profilePhoto) {
+      const oldPath = path3.join(process.cwd(), tutorProfile.profilePhoto);
+      if (fs3.existsSync(oldPath)) {
+        await fs3.promises.unlink(oldPath).catch((err) => console.error("Failed to delete old tutor photo:", err));
+      }
+    }
+    const relativePath = `/uploads/tutors/${req.file.filename}`;
+    await TutorService.updateTutorProfilePhoto(id, relativePath);
+    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    res.status(200).json({
+      message: "Tutor profile photo uploaded successfully",
+      profilePhoto: relativePath,
+      profilePhotoUrl: photoUrl
+    });
+  } catch (error) {
+    if (req.file?.path && fs3.existsSync(req.file.path)) {
+      await fs3.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on error:", err));
+    }
+    next(error);
+  }
+};
 var TutorController = {
   createTutorProfile: createTutorProfile2,
   getAllTutors: getAllTutors2,
   getMyTutorProfile: getMyTutorProfile2,
   getTutorById: getTutorById2,
-  updateTutorProfile: updateTutorProfile2
+  updateTutorProfile: updateTutorProfile2,
+  uploadPhoto: uploadPhoto2
 };
 
 // src/modules/tutor/tutor.route.ts
@@ -449,6 +714,11 @@ router2.get(
   TutorController.getMyTutorProfile
 );
 router2.get("/:id", TutorController.getTutorById);
+router2.post(
+  "/:id/upload-photo",
+  uploadSingle("tutors", "photo"),
+  TutorController.uploadPhoto
+);
 var tutorRouter = router2;
 
 // src/modules/category/category.route.ts
@@ -731,7 +1001,7 @@ var createBooking = async (studentId, payload) => {
   if (existingBooking) {
     throw new Error("This time slot is already booked");
   }
-  return prisma.booking.create({
+  const booking = await prisma.booking.create({
     data: {
       studentId,
       tutorId: payload.tutorId,
@@ -747,14 +1017,50 @@ var createBooking = async (studentId, payload) => {
         include: {
           user: {
             select: {
+              id: true,
               name: true,
               email: true
             }
           }
         }
+      },
+      student: {
+        select: {
+          name: true
+        }
       }
     }
   });
+  await NotificationService.createNotification({
+    receiverId: studentId,
+    receiverRole: "STUDENT",
+    title: "Booking Confirmed",
+    message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
+    type: "BOOKING_CONFIRMED",
+    relatedId: booking.id
+  });
+  await NotificationService.createNotification({
+    receiverId: booking.tutor.userId,
+    receiverRole: "TUTOR",
+    title: "New Booking Received",
+    message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
+    type: "NEW_BOOKING_RECEIVED",
+    relatedId: booking.id
+  });
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" }
+  });
+  for (const admin of admins) {
+    await NotificationService.createNotification({
+      receiverId: admin.id,
+      receiverRole: "ADMIN",
+      title: "New Booking Created",
+      message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
+      type: "NEW_BOOKING_CREATED",
+      relatedId: booking.id
+    });
+  }
+  return booking;
 };
 var getMyBookings = async (studentId) => {
   return prisma.booking.findMany({
@@ -799,30 +1105,79 @@ var getTutorSessions = async (tutorId) => {
 };
 var updateBookingsStatus = async (bookingId, tutorId, status) => {
   const booking = await prisma.booking.findFirstOrThrow({
-    where: { id: bookingId }
+    where: { id: bookingId },
+    include: {
+      tutor: {
+        include: {
+          user: true
+        }
+      },
+      student: true
+    }
   });
   if (booking.tutorId !== tutorId) {
     throw new Error("You are not authorized to update this booking");
   }
-  return prisma.booking.update({
+  const updated = await prisma.booking.update({
     where: { id: bookingId },
     data: { status }
   });
+  if (status === "COMPLETED") {
+    await NotificationService.createNotification({
+      receiverId: booking.studentId,
+      receiverRole: "STUDENT",
+      title: "Session Completed",
+      message: `Your session with ${booking.tutor.user.name} for ${booking.subject} has been marked as completed.`,
+      type: "SESSION_COMPLETED",
+      relatedId: booking.id
+    });
+    await NotificationService.createNotification({
+      receiverId: booking.tutor.userId,
+      receiverRole: "TUTOR",
+      title: "Session Completed",
+      message: `Your session with student ${booking.student.name} for ${booking.subject} has been marked as completed.`,
+      type: "SESSION_COMPLETED",
+      relatedId: booking.id
+    });
+  }
+  return updated;
 };
 var cancleBooking = async (bookingId, userId, userRole) => {
   const booking = await prisma.booking.findFirstOrThrow({
     where: { id: bookingId },
     include: {
-      tutor: true
+      tutor: {
+        include: {
+          user: true
+        }
+      },
+      student: true
     }
   });
   if (booking.status === "COMPLETED") {
     throw new Error("Cannot cancel a completed booking");
   }
-  return prisma.booking.update({
+  const updated = await prisma.booking.update({
     where: { id: bookingId },
     data: { status: "CANCELLED" }
   });
+  await NotificationService.createNotification({
+    receiverId: booking.studentId,
+    receiverRole: "STUDENT",
+    title: "Booking Cancelled",
+    message: `Your booking with ${booking.tutor.user.name} for ${booking.subject} has been cancelled.`,
+    type: "BOOKING_CANCELLED",
+    relatedId: booking.id
+  });
+  await NotificationService.createNotification({
+    receiverId: booking.tutor.userId,
+    receiverRole: "TUTOR",
+    title: userRole === "STUDENT" ? "Booking Cancelled by Student" : "Booking Cancelled",
+    message: `The booking for ${booking.subject} with student ${booking.student.name} has been cancelled.`,
+    type: "BOOKING_CANCELLED",
+    relatedId: booking.id
+  });
+  return updated;
 };
 var BookingService = {
   createBooking,
@@ -982,8 +1337,8 @@ var createReview = async (studentId, payload) => {
   if (payload.rating < 1 || payload.rating > 5) {
     throw new Error("Rating must be between 1 and 5");
   }
-  return prisma.$transaction(async (tx) => {
-    const review = await tx.review.create({
+  const review = await prisma.$transaction(async (tx) => {
+    const review2 = await tx.review.create({
       data: {
         bookingId: payload.bookingId,
         studentId,
@@ -1013,8 +1368,17 @@ var createReview = async (studentId, payload) => {
         totalReviews: reviews.length
       }
     });
-    return review;
+    return review2;
   });
+  await NotificationService.createNotification({
+    receiverId: booking.tutor.userId,
+    receiverRole: "TUTOR",
+    title: "New Review Received",
+    message: `Student ${review.student.name} left you a ${payload.rating}-star review.`,
+    type: "NEW_REVIEW",
+    relatedId: review.id
+  });
+  return review;
 };
 var getTutorReviews = async (tutorId) => {
   return prisma.review.findMany({
@@ -1423,8 +1787,298 @@ router7.get("/bookings", auth_default("ADMIN" /* ADMIN */), AdminController.getA
 router7.get("/stats", auth_default("ADMIN" /* ADMIN */), AdminController.getDashboardStats);
 var adminRouter = router7;
 
+// src/modules/stats/stats.route.ts
+import express8 from "express";
+
+// src/modules/stats/stats.service.ts
+var getPlatformStats = async () => {
+  const activeStudentsCount = await prisma.user.count({
+    where: {
+      role: "STUDENT",
+      status: "ACTIVE"
+    }
+  });
+  const activeTutorsCount = await prisma.tutorProfile.count({
+    where: {
+      user: {
+        status: "ACTIVE"
+      }
+    }
+  });
+  const subjectsCount = await prisma.category.count();
+  const completedBookings = await prisma.booking.count({
+    where: {
+      status: "COMPLETED"
+    }
+  });
+  const totalBookings = await prisma.booking.count();
+  const successRate = totalBookings > 0 ? Math.round(completedBookings / totalBookings * 100) : 98;
+  return {
+    students: activeStudentsCount,
+    tutors: activeTutorsCount,
+    subjects: subjectsCount,
+    successRate
+  };
+};
+var StatsService = {
+  getPlatformStats
+};
+
+// src/modules/stats/stats.controller.ts
+var getPlatformStats2 = async (req, res, next) => {
+  try {
+    const result = await StatsService.getPlatformStats();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var StatsController = {
+  getPlatformStats: getPlatformStats2
+};
+
+// src/modules/stats/stats.route.ts
+var router8 = express8.Router();
+router8.get("/platform", StatsController.getPlatformStats);
+var statsRouter = router8;
+
+// src/modules/wishlist/wishlist.route.ts
+import express9 from "express";
+
+// src/modules/wishlist/wishlist.service.ts
+var addToWishlist = async (studentId, tutorId) => {
+  const tutor = await prisma.tutorProfile.findUnique({
+    where: { id: tutorId }
+  });
+  if (!tutor) {
+    const error = new Error("Tutor profile not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  const existing = await prisma.wishlist.findUnique({
+    where: {
+      studentId_tutorId: {
+        studentId,
+        tutorId
+      }
+    }
+  });
+  if (existing) {
+    const error = new Error("Tutor is already in your wishlist");
+    error.statusCode = 400;
+    throw error;
+  }
+  return prisma.wishlist.create({
+    data: {
+      studentId,
+      tutorId
+    },
+    include: {
+      tutor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true
+            }
+          }
+        }
+      }
+    }
+  });
+};
+var removeFromWishlist = async (studentId, tutorId) => {
+  const existing = await prisma.wishlist.findUnique({
+    where: {
+      studentId_tutorId: {
+        studentId,
+        tutorId
+      }
+    }
+  });
+  if (!existing) {
+    const error = new Error("Tutor is not in your wishlist");
+    error.statusCode = 404;
+    throw error;
+  }
+  return prisma.wishlist.delete({
+    where: {
+      studentId_tutorId: {
+        studentId,
+        tutorId
+      }
+    }
+  });
+};
+var getWishlist = async (studentId) => {
+  return prisma.wishlist.findMany({
+    where: { studentId },
+    include: {
+      tutor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: {
+      createdAt: "desc"
+    }
+  });
+};
+var WishlistService = {
+  addToWishlist,
+  removeFromWishlist,
+  getWishlist
+};
+
+// src/modules/wishlist/wishlist.controller.ts
+var addToWishlist2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const { tutorId } = req.params;
+    const result = await WishlistService.addToWishlist(user.id, tutorId);
+    res.status(201).json({
+      message: "Tutor added to wishlist successfully",
+      data: result
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ message: error.message || "Something went wrong" });
+  }
+};
+var removeFromWishlist2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const { tutorId } = req.params;
+    await WishlistService.removeFromWishlist(user.id, tutorId);
+    res.status(200).json({
+      message: "Tutor removed from wishlist successfully"
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ message: error.message || "Something went wrong" });
+  }
+};
+var getWishlist2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const result = await WishlistService.getWishlist(user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var WishlistController = {
+  addToWishlist: addToWishlist2,
+  removeFromWishlist: removeFromWishlist2,
+  getWishlist: getWishlist2
+};
+
+// src/modules/wishlist/wishlist.route.ts
+var router9 = express9.Router();
+router9.get(
+  "/",
+  auth_default("STUDENT" /* STUDENT */),
+  WishlistController.getWishlist
+);
+router9.post(
+  "/:tutorId",
+  auth_default("STUDENT" /* STUDENT */),
+  WishlistController.addToWishlist
+);
+router9.delete(
+  "/:tutorId",
+  auth_default("STUDENT" /* STUDENT */),
+  WishlistController.removeFromWishlist
+);
+var wishlistRouter = router9;
+
+// src/modules/notification/notification.route.ts
+import express10 from "express";
+
+// src/modules/notification/notification.controller.ts
+var getNotifications2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const result = await NotificationService.getNotifications(user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var getUnreadCount2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const count = await NotificationService.getUnreadCount(user.id);
+    res.status(200).json({ count });
+  } catch (error) {
+    next(error);
+  }
+};
+var markAllRead2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    await NotificationService.markAllRead(user.id);
+    res.status(200).json({ message: "All notifications marked as read" });
+  } catch (error) {
+    next(error);
+  }
+};
+var NotificationController = {
+  getNotifications: getNotifications2,
+  getUnreadCount: getUnreadCount2,
+  markAllRead: markAllRead2
+};
+
+// src/modules/notification/notification.route.ts
+var router10 = express10.Router();
+router10.get(
+  "/",
+  auth_default(),
+  NotificationController.getNotifications
+);
+router10.get(
+  "/unread-count",
+  auth_default(),
+  NotificationController.getUnreadCount
+);
+router10.patch(
+  "/mark-all-read",
+  auth_default(),
+  NotificationController.markAllRead
+);
+var notificationRouter = router10;
+
 // src/app.ts
-var app = express8();
+import path4 from "path";
+var app = express11();
 app.set("trust proxy", 1);
 var allowedOrigins = [
   process.env.APP_URL,
@@ -1444,7 +2098,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Cookie"]
 }));
-app.use(express8.json());
+app.use(express11.json());
 app.use(cookieParser());
 app.use((req, res, next) => {
   console.log("\u{1F4E5} Request:", {
@@ -1457,6 +2111,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+app.use("/uploads", express11.static(path4.join(process.cwd(), "uploads")));
+app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);
+app.post("/api/students/:id/upload-photo", uploadSingle("students", "photo"), UserController.uploadPhoto);
 app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/tutors", tutorRouter);
@@ -1465,6 +2122,9 @@ app.use("/api/v1/availability", availabilityRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use("/api/v1/reviews", reviewRouter);
 app.use("/api/v1/admin", adminRouter);
+app.use("/api/v1/stats", statsRouter);
+app.use("/api/v1/wishlist", wishlistRouter);
+app.use("/api/v1/notifications", notificationRouter);
 app.get("/", (req, res) => {
   res.send("SkillBridge API is running");
 });

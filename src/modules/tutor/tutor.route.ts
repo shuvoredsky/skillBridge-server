@@ -1,6 +1,7 @@
 import express from "express";
 import { TutorController } from "./tutor.controller";
 import auth, { UserRole } from "../../middleware/auth";
+import { uploadSingle } from "../../config/multer";
 
 const router = express.Router();
 
@@ -27,5 +28,11 @@ router.get(
 
 
 router.get("/:id", TutorController.getTutorById);
+
+router.post(
+  "/:id/upload-photo",
+  uploadSingle("tutors", "photo"),
+  TutorController.uploadPhoto
+);
 
 export const tutorRouter = router;

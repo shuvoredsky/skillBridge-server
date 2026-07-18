@@ -11,6 +11,34 @@ export const auth = betterAuth({
 
     plugins: [bearer()], 
     
+    databaseHooks: {
+        user: {
+            create: {
+                after: async (user) => {
+                    try {
+                        const admins = await prisma.user.findMany({
+                            where: { role: "ADMIN" }
+                        });
+                        for (const admin of admins) {
+                            await (prisma as any).notification.create({
+                                data: {
+                                    receiverId: admin.id,
+                                    receiverRole: "ADMIN",
+                                    title: "New User Registered",
+                                    message: `A new user has registered: ${user.name || user.email} (${user.role}).`,
+                                    type: "NEW_USER_REGISTERED",
+                                    relatedId: user.id,
+                                }
+                            });
+                        }
+                    } catch (err) {
+                        console.error("Failed to create registration notification:", err);
+                    }
+                }
+            }
+        }
+    }, 
+    
     trustedOrigins: [
         process.env.APP_URL!,
         "http://localhost:3000",

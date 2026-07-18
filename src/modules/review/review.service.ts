@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { NotificationService } from "../notification/notification.service";
 
 type CreateReviewPayload = {
   bookingId: string;
@@ -40,7 +41,7 @@ const createReview = async (
   }
 
   
-  return prisma.$transaction(async (tx) => {
+  const review = await prisma.$transaction(async (tx) => {
     
     const review = await tx.review.create({
       data: {
@@ -78,6 +79,18 @@ const createReview = async (
 
     return review;
   });
+
+  // Notify tutor: New review received
+  await NotificationService.createNotification({
+    receiverId: booking.tutor.userId,
+    receiverRole: "TUTOR",
+    title: "New Review Received",
+    message: `Student ${review.student.name} left you a ${payload.rating}-star review.`,
+    type: "NEW_REVIEW",
+    relatedId: review.id,
+  });
+
+  return review;
 };
 
 

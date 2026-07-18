@@ -12,6 +12,13 @@ import { availabilityRouter } from "./modules/availability/availability.route";
 import { bookingRouter } from "./modules/booking/booking.route";
 import { reviewRouter } from "./modules/review/review.route";
 import { adminRouter } from "./modules/admin/admin.route";
+import { statsRouter } from "./modules/stats/stats.route";
+import { wishlistRouter } from "./modules/wishlist/wishlist.route";
+import { notificationRouter } from "./modules/notification/notification.route";
+import path from "path";
+import { uploadSingle } from "./config/multer";
+import { TutorController } from "./modules/tutor/tutor.controller";
+import { UserController } from "./modules/user/user.controller";
 
 const app = express();
 
@@ -52,6 +59,13 @@ app.use((req, res, next) => {
     next();
 });
 
+// Serve the uploads folder statically
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+// Direct endpoints for tutor and student photo upload (Backend Only)
+app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);
+app.post("/api/students/:id/upload-photo", uploadSingle("students", "photo"), UserController.uploadPhoto);
+
 app.all('/api/auth/*splat', toNodeHandler(auth));
 
 app.use("/api/v1/users", userRouter);
@@ -61,6 +75,9 @@ app.use("/api/v1/availability", availabilityRouter);
 app.use("/api/v1/bookings", bookingRouter);
 app.use("/api/v1/reviews", reviewRouter);
 app.use("/api/v1/admin", adminRouter);
+app.use("/api/v1/stats", statsRouter);
+app.use("/api/v1/wishlist", wishlistRouter);
+app.use("/api/v1/notifications", notificationRouter);
 
 app.get("/", (req, res) => {
   res.send("SkillBridge API is running");

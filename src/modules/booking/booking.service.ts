@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { NotificationService } from "../notification/notification.service";
 
 type CreateBookingPayload = {
     tutorId: string;
@@ -44,7 +45,7 @@ const createBooking = async (
     }
 
 
-    return prisma.booking.create({
+    const booking = await prisma.booking.create({
         data: {
             studentId,
             tutorId: payload.tutorId,
@@ -60,14 +61,57 @@ const createBooking = async (
                 include: {
                     user: {
                         select: {
+                            id: true,
                             name: true,
                             email: true
                         }
                     }
                 }
+            },
+            student: {
+                select: {
+                    name: true
+                }
             }
         }
     });
+
+    // Notify student: Booking confirmed
+    await NotificationService.createNotification({
+      receiverId: studentId,
+      receiverRole: "STUDENT",
+      title: "Booking Confirmed",
+      message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
+      type: "BOOKING_CONFIRMED",
+      relatedId: booking.id,
+    });
+
+    // Notify tutor: New booking received
+    await NotificationService.createNotification({
+      receiverId: booking.tutor.userId,
+      receiverRole: "TUTOR",
+      title: "New Booking Received",
+      message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
+      type: "NEW_BOOKING_RECEIVED",
+      relatedId: booking.id,
+    });
+
+    // Notify admins: New booking created
+    const admins = await prisma.user.findMany({
+      where: { role: "ADMIN" }
+    });
+    for (const admin of admins) {
+      await NotificationService.createNotification({
+        receiverId: admin.id,
+        receiverRole: "ADMIN",
+        title: "New Booking Created",
+        message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
+        type: "NEW_BOOKING_CREATED",
+        relatedId: booking.id,
+      });
+    }
+
+    return booking;
 }
 
 const getMyBookings = async (studentId: string) => {
@@ -120,16 +164,48 @@ const updateBookingsStatus = async (
 ) => {
     const booking = await prisma.booking.findFirstOrThrow({
         where: { id: bookingId },
+        include: {
+            tutor: {
+                include: {
+                    user: true
+                }
+            },
+            student: true
+        }
     })
 
     if (booking.tutorId !== tutorId) {
         throw new Error("You are not authorized to update this booking")
     }
 
-    return prisma.booking.update({
+    const updated = await prisma.booking.update({
         where: { id: bookingId },
         data: { status }
     })
+
+    if (status === "COMPLETED") {
+        // Tutor marks a session as completed -> notify the student
+        await NotificationService.createNotification({
+          receiverId: booking.studentId,
+          receiverRole: "STUDENT",
+          title: "Session Completed",
+          message: `Your session with ${booking.tutor.user.name} for ${booking.subject} has been marked as completed.`,
+          type: "SESSION_COMPLETED",
+          relatedId: booking.id,
+        });
+
+        // Booking marked completed -> notify the tutor
+        await NotificationService.createNotification({
+          receiverId: booking.tutor.userId,
+          receiverRole: "TUTOR",
+          title: "Session Completed",
+          message: `Your session with student ${booking.student.name} for ${booking.subject} has been marked as completed.`,
+          type: "SESSION_COMPLETED",
+          relatedId: booking.id,
+        });
+    }
+
+    return updated;
 }
 
 const cancleBooking = async (
@@ -140,7 +216,12 @@ const cancleBooking = async (
     const booking = await prisma.booking.findFirstOrThrow({
         where: { id: bookingId },
         include: {
-            tutor: true,
+            tutor: {
+                include: {
+                    user: true
+                }
+            },
+            student: true
         }
     })
 
@@ -149,10 +230,32 @@ const cancleBooking = async (
         throw new Error("Cannot cancel a completed booking")
     }
 
-    return prisma.booking.update({
+    const updated = await prisma.booking.update({
         where: { id: bookingId },
         data: { status: "CANCELLED" }
     })
+
+    // Notify student: Booking cancelled
+    await NotificationService.createNotification({
+      receiverId: booking.studentId,
+      receiverRole: "STUDENT",
+      title: "Booking Cancelled",
+      message: `Your booking with ${booking.tutor.user.name} for ${booking.subject} has been cancelled.`,
+      type: "BOOKING_CANCELLED",
+      relatedId: booking.id,
+    });
+
+    // Notify tutor: Student cancels a booking (or booking cancelled)
+    await NotificationService.createNotification({
+      receiverId: booking.tutor.userId,
+      receiverRole: "TUTOR",
+      title: userRole === "STUDENT" ? "Booking Cancelled by Student" : "Booking Cancelled",
+      message: `The booking for ${booking.subject} with student ${booking.student.name} has been cancelled.`,
+      type: "BOOKING_CANCELLED",
+      relatedId: booking.id,
+    });
+
+    return updated;
 }
 
 export const BookingService = {

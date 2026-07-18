@@ -14,6 +14,7 @@ model User {
   status        UserStatus    @default(ACTIVE)
   emailVerified Boolean       @default(false)
   image         String?
+  profilePhoto  String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @default(now())
   phone         String?
@@ -22,6 +23,8 @@ model User {
   reviews       Review[]
   Session       Session[]
   tutorProfile  TutorProfile?
+  wishlist      Wishlist[]
+  notifications Notification[]
 }
 
 model Account {
@@ -61,6 +64,7 @@ model TutorProfile {
   hourlyRate   Float
   experience   String?
   education    String?
+  profilePhoto String?
   rating       Float          @default(0)
   totalReviews Int            @default(0)
   createdAt    DateTime       @default(now())
@@ -69,6 +73,7 @@ model TutorProfile {
   bookings     Booking[]
   reviews      Review[]
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wishlistedBy Wishlist[]
 }
 
 model Category {
@@ -119,6 +124,35 @@ model Review {
   booking   Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   student   User         @relation(fields: [studentId], references: [id])
   tutor     TutorProfile @relation(fields: [tutorId], references: [id])
+}
+
+model Wishlist {
+  id        String       @id @default(cuid())
+  studentId String
+  tutorId   String
+  createdAt DateTime     @default(now())
+  student   User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, tutorId])
+  @@index([studentId])
+  @@index([tutorId])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  receiverId   String
+  receiverRole UserRole
+  title        String
+  message      String
+  type         String
+  isRead       Boolean  @default(false)
+  relatedId    String?
+  createdAt    DateTime @default(now())
+  receiver     User     @relation(fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([receiverId])
+  @@index([receiverRole])
 }
 
 model Session {

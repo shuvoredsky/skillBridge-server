@@ -1,6 +1,7 @@
 import { profile } from "node:console";
 import { prisma } from "../../lib/prisma";
 import { UserRole } from "../../middleware/auth";
+import { NotificationService } from "../notification/notification.service";
 
 type CreateTutorPayload = {
     bio?: string;
@@ -33,6 +34,9 @@ const createTutorProfile = async (
         userId,
         ...payload,
       },
+      include: {
+        user: true,
+      },
     });
 
     await tx.user.update({
@@ -45,6 +49,21 @@ const createTutorProfile = async (
     return profile;
   });
 
+  // Notify admins: New tutor registered
+  const admins = await prisma.user.findMany({
+    where: { role: "ADMIN" }
+  });
+  for (const admin of admins) {
+    await NotificationService.createNotification({
+      receiverId: admin.id,
+      receiverRole: "ADMIN",
+      title: "New Tutor Registered",
+      message: `A new tutor has registered: ${tutorProfile.user.name || tutorProfile.user.email}.`,
+      type: "NEW_TUTOR_REGISTERED",
+      relatedId: tutorProfile.id,
+    });
+  }
+
   return tutorProfile;
 };
 
@@ -56,10 +75,16 @@ const getAllTutors = async (filters: {
   maxPrice?: number;
   minRating?: number;
 }) => {
-  const where: any = {};
+  // Fix: Only return tutors whose associated user account is ACTIVE (not BANNED)
+  const where: any = {
+    user: {
+      status: "ACTIVE"
+    }
+  };
 
   if (filters.search) {
     where.user = {
+      ...where.user,
       name: {
         contains: filters.search,
         mode: 'insensitive'
@@ -93,7 +118,8 @@ const getAllTutors = async (filters: {
           id: true,
           name: true,
           email: true,
-          image: true
+          image: true,
+          status: true
         }
       }
     },
@@ -163,11 +189,25 @@ const getTutorById = async (tutorId: string) => {
   });
 };
 
+const getTutorProfileOnly = async (id: string) => {
+  return prisma.tutorProfile.findUnique({
+    where: { id },
+  });
+};
+
+const updateTutorProfilePhoto = async (id: string, profilePhoto: string) => {
+  return prisma.tutorProfile.update({
+    where: { id },
+    data: { profilePhoto },
+  });
+};
 
 export const TutorService = {
     createTutorProfile,
     getAllTutors,
     getMyTutorProfile,
     getTutorById,
-    updateTutorProfile
+    updateTutorProfile,
+    getTutorProfileOnly,
+    updateTutorProfilePhoto
 }
