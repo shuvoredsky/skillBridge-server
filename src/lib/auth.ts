@@ -43,6 +43,7 @@ export const auth = betterAuth({
         process.env.APP_URL!,
         "http://localhost:3000",
         "http://localhost:3001",
+        "https://skill-bridge-client-zeta.vercel.app",
         "https://skillbridge-server-q.onrender.com", 
     ].filter(Boolean),
     

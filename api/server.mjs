@@ -54,6 +54,7 @@ var auth = betterAuth({
     process.env.APP_URL,
     "http://localhost:3000",
     "http://localhost:3001",
+    "https://skill-bridge-client-zeta.vercel.app",
     "https://skillbridge-server-q.onrender.com"
   ].filter(Boolean),
   baseURL: process.env.BETTER_AUTH_URL || "http://localhost:5000",
@@ -2080,17 +2081,24 @@ var notificationRouter = router10;
 import path4 from "path";
 var app = express11();
 app.set("trust proxy", 1);
-var allowedOrigins = [
-  process.env.APP_URL,
-  "http://localhost:3000",
-  "http://localhost:3001"
-].filter(Boolean);
+var getCleanOrigins = () => {
+  const rawOrigins = [
+    process.env.APP_URL,
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "https://skill-bridge-client-zeta.vercel.app"
+  ];
+  return rawOrigins.filter(Boolean).map((origin) => origin.replace(/\/$/, "").trim());
+};
+var allowedOrigins = getCleanOrigins();
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin) return callback(null, true);
+    const cleanOrigin = origin.replace(/\/$/, "").trim();
+    if (allowedOrigins.includes(cleanOrigin)) {
       callback(null, true);
     } else {
-      console.log("\u274C CORS blocked:", origin);
+      console.log("\u274C CORS blocked:", origin, "Allowed:", allowedOrigins);
       callback(new Error("Not allowed by CORS"));
     }
   },

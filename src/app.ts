@@ -24,18 +24,28 @@ const app = express();
 
 app.set('trust proxy', 1);
 
-const allowedOrigins = [
-    process.env.APP_URL,
-    "http://localhost:3000",
-    "http://localhost:3001",
-].filter(Boolean); 
+const getCleanOrigins = () => {
+    const rawOrigins = [
+        process.env.APP_URL,
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://skill-bridge-client-zeta.vercel.app",
+    ];
+    return rawOrigins
+        .filter(Boolean)
+        .map((origin) => origin!.replace(/\/$/, "").trim());
+};
+
+const allowedOrigins = getCleanOrigins();
 
 app.use(cors({
     origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
+        if (!origin) return callback(null, true);
+        const cleanOrigin = origin.replace(/\/$/, "").trim();
+        if (allowedOrigins.includes(cleanOrigin)) {
             callback(null, true);
         } else {
-            console.log('❌ CORS blocked:', origin);
+            console.log('❌ CORS blocked:', origin, 'Allowed:', allowedOrigins);
             callback(new Error('Not allowed by CORS'));
         }
     },
