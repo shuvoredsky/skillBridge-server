@@ -5,30 +5,8 @@ import { Request, Response, NextFunction } from "express";
 
 export type UploadDestination = "tutors" | "students" | "certificates";
 
-/**
- * Reusable Multer configuration factory.
- * @param destination Destination folder under the root uploads directory.
- */
 export const createMulterUpload = (destination: UploadDestination) => {
-  const uploadPath = path.join(process.cwd(), "uploads", destination);
-
-  // Ensure directories exist locally (defensive check)
-  if (!fs.existsSync(uploadPath)) {
-    fs.mkdirSync(uploadPath, { recursive: true });
-  }
-
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const fileExt = path.extname(file.originalname).toLowerCase();
-      // Sanitize user ID to protect against directory traversal and keep filename clean
-      const userId = req.params.id ? req.params.id.replace(/[^a-zA-Z0-9_-]/g, "") : "unknown";
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      cb(null, `${userId}-${uniqueSuffix}${fileExt}`);
-    },
-  });
+  const storage = multer.memoryStorage();
 
   const fileFilter = (
     req: Request,

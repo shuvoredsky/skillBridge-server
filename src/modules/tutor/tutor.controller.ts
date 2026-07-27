@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 import { TutorService } from "./tutor.service";
-import fs from "fs";
-import path from "path";
+import { uploadToCloudinary, deleteFromCloudinary } from "../../lib/cloudinary";
+import { TutorDocumentType } from "@prisma/client";
 
 const createTutorProfile = async(
     req: Request,
@@ -118,35 +118,94 @@ const uploadPhoto = async (
     // 1. Verify tutor profile exists
     const tutorProfile = await TutorService.getTutorProfileOnly(id);
     if (!tutorProfile) {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        await fs.promises.unlink(req.file.path).catch(err => console.error("Error deleting uploaded file on invalid tutor ID:", err));
-      }
       return res.status(404).json({ message: "Tutor profile not found" });
     }
 
-    // 2. Delete old photo if it exists on disk
-    if (tutorProfile.profilePhoto) {
-      const oldPath = path.join(process.cwd(), tutorProfile.profilePhoto);
-      if (fs.existsSync(oldPath)) {
-        await fs.promises.unlink(oldPath).catch(err => console.error("Failed to delete old tutor photo:", err));
-      }
+    // 2. Delete old photo if it exists on Cloudinary, otherwise skip for local files
+    if (tutorProfile.profilePhotoPublicId) {
+      await deleteFromCloudinary(tutorProfile.profilePhotoPublicId);
+    } else if (tutorProfile.profilePhoto) {
+      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${tutorProfile.profilePhoto}`);
     }
 
-    // 3. Save new path relative to project root
-    const relativePath = `/uploads/tutors/${req.file.filename}`;
-    await TutorService.updateTutorProfilePhoto(id, relativePath);
+    // 3. Upload to Cloudinary
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${uniqueSuffix}`;
 
-    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/tutors",
+      publicId
+    );
+
+    // 4. Save secure URL and public ID
+    await TutorService.updateTutorProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
 
     res.status(200).json({
       message: "Tutor profile photo uploaded successfully",
-      profilePhoto: relativePath,
-      profilePhotoUrl: photoUrl
+      profilePhoto: uploadResult.secure_url,
+      profilePhotoUrl: uploadResult.secure_url
     });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      await fs.promises.unlink(req.file.path).catch(err => console.error("Error deleting uploaded file on error:", err));
+    next(error);
+  }
+};
+
+const uploadDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id, type } = req.params;
+
+    if (!type || !["degree", "nid", "certificate"].includes(type.toLowerCase())) {
+      return res.status(400).json({ message: "Invalid document type. Must be degree, nid, or certificate" });
     }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded or file type is invalid." });
+    }
+
+    // 1. Verify tutor profile exists
+    const tutorProfile = await TutorService.getTutorProfileOnly(id);
+    if (!tutorProfile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+
+    const docTypeEnum = type.toUpperCase() as TutorDocumentType;
+
+    // 2. Delete old document if it exists on Cloudinary
+    const existingDoc = await TutorService.getTutorDocumentByType(id, docTypeEnum);
+    if (existingDoc?.publicId) {
+      await deleteFromCloudinary(existingDoc.publicId);
+    }
+
+    // 3. Upload new document to Cloudinary
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${type}-${uniqueSuffix}`;
+
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/certificates",
+      publicId
+    );
+
+    // 4. Save to Database
+    const result = await TutorService.upsertTutorDocument(
+      id,
+      docTypeEnum,
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
+
+    res.status(200).json({
+      message: `${type.charAt(0).toUpperCase() + type.slice(1)} uploaded successfully`,
+      data: result
+    });
+  } catch (error) {
     next(error);
   }
 };
@@ -157,5 +216,6 @@ export const TutorController = {
     getMyTutorProfile,
     getTutorById,
     updateTutorProfile,
-    uploadPhoto
+    uploadPhoto,
+    uploadDocument
 }

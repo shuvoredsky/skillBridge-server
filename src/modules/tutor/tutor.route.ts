@@ -35,4 +35,10 @@ router.post(
   TutorController.uploadPhoto
 );
 
+router.post(
+  "/:id/documents/:type",
+  uploadSingle("certificates", "document"),
+  TutorController.uploadDocument
+);
+
 export const tutorRouter = router;

@@ -85,9 +85,137 @@ const getDashboardStats = async (
   }
 };
 
+const getPendingTutors = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await AdminService.getPendingTutors();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const approveTutor = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const result = await AdminService.approveTutor(id);
+    res.status(200).json({
+      message: "Tutor profile approved successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const rejectTutor = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+    const result = await AdminService.rejectTutor(id, rejectionReason);
+    res.status(200).json({
+      message: "Tutor profile rejected successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getUserGrowth = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const range = parseInt(req.query.range as string) || 30;
+    const granularity = (req.query.granularity as "day" | "week" | "month") || "day";
+    const result = await AdminService.getUserGrowth(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getRevenueTrend = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const range = parseInt(req.query.range as string) || 30;
+    const granularity = (req.query.granularity as "day" | "week" | "month") || "day";
+    const result = await AdminService.getRevenueTrend(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getBookingVolume = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const range = parseInt(req.query.range as string) || 30;
+    const granularity = (req.query.granularity as "day" | "week" | "month") || "day";
+    const result = await AdminService.getBookingVolume(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getTopSubjects = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const result = await AdminService.getTopSubjects();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getTopTutors = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const minReviews = parseInt(req.query.minReviews as string) || 3;
+    const result = await AdminService.getTopTutors(minReviews);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const AdminController = {
   getAllUsers,
   updateUserStatus,
   getAllBookings,
   getDashboardStats,
+  getPendingTutors,
+  approveTutor,
+  rejectTutor,
+  getUserGrowth,
+  getRevenueTrend,
+  getBookingVolume,
+  getTopSubjects,
+  getTopTutors,
 };

@@ -2,6 +2,7 @@ import { profile } from "node:console";
 import { prisma } from "../../lib/prisma";
 import { UserRole } from "../../middleware/auth";
 import { NotificationService } from "../notification/notification.service";
+import { TutorDocumentType, TutorVerificationStatus } from "@prisma/client";
 
 type CreateTutorPayload = {
     bio?: string;
@@ -75,8 +76,9 @@ const getAllTutors = async (filters: {
   maxPrice?: number;
   minRating?: number;
 }) => {
-  // Fix: Only return tutors whose associated user account is ACTIVE (not BANNED)
+  // Fix: Only return tutors whose associated user account is ACTIVE (not BANNED) and profile is APPROVED
   const where: any = {
+    verificationStatus: "APPROVED",
     user: {
       status: "ACTIVE"
     }
@@ -139,7 +141,8 @@ const getMyTutorProfile = async(userId: string)=>{
                     name: true,
                     email: true
                 }
-            }
+            },
+            documents: true
         }
     })
 }
@@ -160,7 +163,7 @@ const updateTutorProfile = async (
 };
 
 const getTutorById = async (tutorId: string) => {
-  return prisma.tutorProfile.findUniqueOrThrow({
+  const tutor = await prisma.tutorProfile.findUniqueOrThrow({
     where: { id: tutorId },
     include: {
       user: {
@@ -168,7 +171,8 @@ const getTutorById = async (tutorId: string) => {
           id: true,
           name: true,
           email: true,
-          image: true
+          image: true,
+          status: true
         }
       },
       reviews: {
@@ -187,6 +191,12 @@ const getTutorById = async (tutorId: string) => {
       }
     }
   });
+
+  if (tutor.verificationStatus !== "APPROVED" || tutor.user.status !== "ACTIVE") {
+    throw new Error("Tutor profile is not publicly visible");
+  }
+
+  return tutor;
 };
 
 const getTutorProfileOnly = async (id: string) => {
@@ -195,10 +205,43 @@ const getTutorProfileOnly = async (id: string) => {
   });
 };
 
-const updateTutorProfilePhoto = async (id: string, profilePhoto: string) => {
+const updateTutorProfilePhoto = async (id: string, profilePhoto: string, profilePhotoPublicId: string) => {
   return prisma.tutorProfile.update({
     where: { id },
-    data: { profilePhoto },
+    data: { profilePhoto, profilePhotoPublicId },
+  });
+};
+
+const upsertTutorDocument = async (
+  tutorId: string,
+  type: TutorDocumentType,
+  url: string,
+  publicId: string
+) => {
+  return prisma.$transaction(async (tx) => {
+    const doc = await tx.tutorDocument.upsert({
+      where: {
+        tutorId_type: { tutorId, type }
+      },
+      update: { url, publicId },
+      create: { tutorId, type, url, publicId }
+    });
+
+    // Reset status to PENDING on document updates to request re-review
+    await tx.tutorProfile.update({
+      where: { id: tutorId },
+      data: { verificationStatus: "PENDING" }
+    });
+
+    return doc;
+  });
+};
+
+const getTutorDocumentByType = async (tutorId: string, type: TutorDocumentType) => {
+  return prisma.tutorDocument.findUnique({
+    where: {
+      tutorId_type: { tutorId, type }
+    }
   });
 };
 
@@ -209,5 +252,7 @@ export const TutorService = {
     getTutorById,
     updateTutorProfile,
     getTutorProfileOnly,
-    updateTutorProfilePhoto
+    updateTutorProfilePhoto,
+    upsertTutorDocument,
+    getTutorDocumentByType
 }

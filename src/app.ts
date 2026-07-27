@@ -15,7 +15,6 @@ import { adminRouter } from "./modules/admin/admin.route";
 import { statsRouter } from "./modules/stats/stats.route";
 import { wishlistRouter } from "./modules/wishlist/wishlist.route";
 import { notificationRouter } from "./modules/notification/notification.route";
-import path from "path";
 import { uploadSingle } from "./config/multer";
 import { TutorController } from "./modules/tutor/tutor.controller";
 import { UserController } from "./modules/user/user.controller";
@@ -69,12 +68,10 @@ app.use((req, res, next) => {
     next();
 });
 
-// Serve the uploads folder statically
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
 // Direct endpoints for tutor and student photo upload (Backend Only)
 app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);
 app.post("/api/students/:id/upload-photo", uploadSingle("students", "photo"), UserController.uploadPhoto);
+app.post("/api/tutors/:id/documents/:type", uploadSingle("certificates", "document"), TutorController.uploadDocument);
 
 app.all('/api/auth/*splat', toNodeHandler(auth));
 

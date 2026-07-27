@@ -1,7 +1,6 @@
 import {NextFunction, Request, Response} from "express"
 import { UserService } from "../user/user.service";
-import fs from "fs";
-import path from "path";
+import { uploadToCloudinary, deleteFromCloudinary } from "../../lib/cloudinary";
 
 const getMe = async (req: Request, res: Response, next: NextFunction) => {
     try{
@@ -35,42 +34,40 @@ const uploadPhoto = async (
     // 1. Verify user exists and has STUDENT role
     const user = await UserService.getUserById(id);
     if (!user) {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        await fs.promises.unlink(req.file.path).catch(err => console.error("Error deleting uploaded file on invalid user ID:", err));
-      }
       return res.status(404).json({ message: "Student not found" });
     }
 
     if (user.role !== "STUDENT") {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        await fs.promises.unlink(req.file.path).catch(err => console.error("Error deleting uploaded file on non-student ID:", err));
-      }
       return res.status(400).json({ message: "User is not a student" });
     }
 
-    // 2. Delete old photo if it exists on disk
-    if (user.profilePhoto) {
-      const oldPath = path.join(process.cwd(), user.profilePhoto);
-      if (fs.existsSync(oldPath)) {
-        await fs.promises.unlink(oldPath).catch(err => console.error("Failed to delete old student photo:", err));
-      }
+    // 2. Delete old photo if it exists on Cloudinary, otherwise skip for local files
+    if (user.profilePhotoPublicId) {
+      await deleteFromCloudinary(user.profilePhotoPublicId);
+    } else if (user.profilePhoto) {
+      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${user.profilePhoto}`);
     }
 
-    // 3. Save new path relative to project root
-    const relativePath = `/uploads/students/${req.file.filename}`;
-    await UserService.updateUserProfilePhoto(id, relativePath);
+    // 3. Upload to Cloudinary
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${uniqueSuffix}`;
 
-    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/students",
+      publicId
+    );
+
+    // 4. Save secure URL and public ID
+    await UserService.updateUserProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
 
     res.status(200).json({
       message: "Student profile photo uploaded successfully",
-      profilePhoto: relativePath,
-      profilePhotoUrl: photoUrl
+      profilePhoto: uploadResult.secure_url,
+      profilePhotoUrl: uploadResult.secure_url
     });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      await fs.promises.unlink(req.file.path).catch(err => console.error("Error deleting uploaded file on error:", err));
-    }
     next(error);
   }
 };

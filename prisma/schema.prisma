@@ -15,6 +15,7 @@ model User {
   emailVerified Boolean       @default(false)
   image         String?
   profilePhoto  String?
+  profilePhotoPublicId String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @default(now())
   phone         String?
@@ -65,10 +66,14 @@ model TutorProfile {
   experience   String?
   education    String?
   profilePhoto String?
+  profilePhotoPublicId String?
   rating       Float          @default(0)
   totalReviews Int            @default(0)
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
+  verificationStatus TutorVerificationStatus @default(PENDING)
+  rejectionReason    String?
+  documents          TutorDocument[]
   availability Availability[]
   bookings     Booking[]
   reviews      Review[]
@@ -186,4 +191,29 @@ enum BookingStatus {
 enum UserStatus {
   ACTIVE
   BANNED
+}
+
+enum TutorVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TutorDocumentType {
+  DEGREE
+  NID
+  CERTIFICATE
+}
+
+model TutorDocument {
+  id        String            @id @default(cuid())
+  tutorId   String
+  type      TutorDocumentType
+  url       String
+  publicId  String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  tutor     TutorProfile      @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@unique([tutorId, type])
 }

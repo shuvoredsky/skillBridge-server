@@ -213,6 +213,7 @@ var getMe = async (userId) => {
       role: true,
       emailVerified: true,
       image: true,
+      profilePhoto: true,
       createdAt: true,
       updatedAt: true
     }
@@ -223,10 +224,10 @@ var getUserById = async (id) => {
     where: { id }
   });
 };
-var updateUserProfilePhoto = async (id, profilePhoto) => {
+var updateUserProfilePhoto = async (id, profilePhoto, profilePhotoPublicId) => {
   return prisma.user.update({
     where: { id },
-    data: { profilePhoto }
+    data: { profilePhoto, profilePhotoPublicId }
   });
 };
 var UserService = {
@@ -235,9 +236,48 @@ var UserService = {
   updateUserProfilePhoto
 };
 
+// src/lib/cloudinary.ts
+import { v2 as cloudinary } from "cloudinary";
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+var uploadToCloudinary = (fileBuffer, folder, publicId) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        public_id: publicId,
+        overwrite: true,
+        resource_type: "auto"
+      },
+      (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+        if (!result) {
+          return reject(new Error("Cloudinary upload returned empty response"));
+        }
+        resolve({
+          secure_url: result.secure_url,
+          public_id: result.public_id
+        });
+      }
+    );
+    uploadStream.end(fileBuffer);
+  });
+};
+var deleteFromCloudinary = async (publicId) => {
+  try {
+    const result = await cloudinary.uploader.destroy(publicId);
+    console.log(`Cloudinary deletion attempt for public ID: ${publicId}. Result:`, result);
+  } catch (error) {
+    console.error(`Failed to delete asset from Cloudinary for public ID ${publicId}:`, error);
+  }
+};
+
 // src/modules/user/user.controller.ts
-import fs from "fs";
-import path from "path";
 var getMe2 = async (req, res, next) => {
   try {
     const user = req.user;
@@ -260,35 +300,31 @@ var uploadPhoto = async (req, res, next) => {
     }
     const user = await UserService.getUserById(id);
     if (!user) {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on invalid user ID:", err));
-      }
       return res.status(404).json({ message: "Student not found" });
     }
     if (user.role !== "STUDENT") {
-      if (req.file.path && fs.existsSync(req.file.path)) {
-        await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on non-student ID:", err));
-      }
       return res.status(400).json({ message: "User is not a student" });
     }
-    if (user.profilePhoto) {
-      const oldPath = path.join(process.cwd(), user.profilePhoto);
-      if (fs.existsSync(oldPath)) {
-        await fs.promises.unlink(oldPath).catch((err) => console.error("Failed to delete old student photo:", err));
-      }
+    if (user.profilePhotoPublicId) {
+      await deleteFromCloudinary(user.profilePhotoPublicId);
+    } else if (user.profilePhoto) {
+      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${user.profilePhoto}`);
     }
-    const relativePath = `/uploads/students/${req.file.filename}`;
-    await UserService.updateUserProfilePhoto(id, relativePath);
-    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/students",
+      publicId
+    );
+    await UserService.updateUserProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
     res.status(200).json({
       message: "Student profile photo uploaded successfully",
-      profilePhoto: relativePath,
-      profilePhotoUrl: photoUrl
+      profilePhoto: uploadResult.secure_url,
+      profilePhotoUrl: uploadResult.secure_url
     });
   } catch (error) {
-    if (req.file?.path && fs.existsSync(req.file.path)) {
-      await fs.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on error:", err));
-    }
     next(error);
   }
 };
@@ -299,28 +335,13 @@ var UserController = {
 
 // src/config/multer.ts
 import multer from "multer";
-import path2 from "path";
-import fs2 from "fs";
+import path from "path";
 var createMulterUpload = (destination) => {
-  const uploadPath = path2.join(process.cwd(), "uploads", destination);
-  if (!fs2.existsSync(uploadPath)) {
-    fs2.mkdirSync(uploadPath, { recursive: true });
-  }
-  const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, uploadPath);
-    },
-    filename: (req, file, cb) => {
-      const fileExt = path2.extname(file.originalname).toLowerCase();
-      const userId = req.params.id ? req.params.id.replace(/[^a-zA-Z0-9_-]/g, "") : "unknown";
-      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-      cb(null, `${userId}-${uniqueSuffix}${fileExt}`);
-    }
-  });
+  const storage = multer.memoryStorage();
   const fileFilter = (req, file, cb) => {
     const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
     const allowedExtensions = [".jpg", ".jpeg", ".png", ".webp"];
-    const fileExt = path2.extname(file.originalname).toLowerCase();
+    const fileExt = path.extname(file.originalname).toLowerCase();
     if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(fileExt)) {
       cb(null, true);
     } else {
@@ -465,6 +486,7 @@ var createTutorProfile = async (userId, payload) => {
 };
 var getAllTutors = async (filters) => {
   const where = {
+    verificationStatus: "APPROVED",
     user: {
       status: "ACTIVE"
     }
@@ -520,7 +542,8 @@ var getMyTutorProfile = async (userId) => {
           name: true,
           email: true
         }
-      }
+      },
+      documents: true
     }
   });
 };
@@ -534,7 +557,7 @@ var updateTutorProfile = async (userId, payload) => {
   });
 };
 var getTutorById = async (tutorId) => {
-  return prisma.tutorProfile.findUniqueOrThrow({
+  const tutor = await prisma.tutorProfile.findUniqueOrThrow({
     where: { id: tutorId },
     include: {
       user: {
@@ -542,7 +565,8 @@ var getTutorById = async (tutorId) => {
           id: true,
           name: true,
           email: true,
-          image: true
+          image: true,
+          status: true
         }
       },
       reviews: {
@@ -561,16 +585,43 @@ var getTutorById = async (tutorId) => {
       }
     }
   });
+  if (tutor.verificationStatus !== "APPROVED" || tutor.user.status !== "ACTIVE") {
+    throw new Error("Tutor profile is not publicly visible");
+  }
+  return tutor;
 };
 var getTutorProfileOnly = async (id) => {
   return prisma.tutorProfile.findUnique({
     where: { id }
   });
 };
-var updateTutorProfilePhoto = async (id, profilePhoto) => {
+var updateTutorProfilePhoto = async (id, profilePhoto, profilePhotoPublicId) => {
   return prisma.tutorProfile.update({
     where: { id },
-    data: { profilePhoto }
+    data: { profilePhoto, profilePhotoPublicId }
+  });
+};
+var upsertTutorDocument = async (tutorId, type, url, publicId) => {
+  return prisma.$transaction(async (tx) => {
+    const doc = await tx.tutorDocument.upsert({
+      where: {
+        tutorId_type: { tutorId, type }
+      },
+      update: { url, publicId },
+      create: { tutorId, type, url, publicId }
+    });
+    await tx.tutorProfile.update({
+      where: { id: tutorId },
+      data: { verificationStatus: "PENDING" }
+    });
+    return doc;
+  });
+};
+var getTutorDocumentByType = async (tutorId, type) => {
+  return prisma.tutorDocument.findUnique({
+    where: {
+      tutorId_type: { tutorId, type }
+    }
   });
 };
 var TutorService = {
@@ -580,12 +631,12 @@ var TutorService = {
   getTutorById,
   updateTutorProfile,
   getTutorProfileOnly,
-  updateTutorProfilePhoto
+  updateTutorProfilePhoto,
+  upsertTutorDocument,
+  getTutorDocumentByType
 };
 
 // src/modules/tutor/tutor.controller.ts
-import fs3 from "fs";
-import path3 from "path";
 var createTutorProfile2 = async (req, res, next) => {
   try {
     const user = req.user;
@@ -661,29 +712,68 @@ var uploadPhoto2 = async (req, res, next) => {
     }
     const tutorProfile = await TutorService.getTutorProfileOnly(id);
     if (!tutorProfile) {
-      if (req.file.path && fs3.existsSync(req.file.path)) {
-        await fs3.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on invalid tutor ID:", err));
-      }
       return res.status(404).json({ message: "Tutor profile not found" });
     }
-    if (tutorProfile.profilePhoto) {
-      const oldPath = path3.join(process.cwd(), tutorProfile.profilePhoto);
-      if (fs3.existsSync(oldPath)) {
-        await fs3.promises.unlink(oldPath).catch((err) => console.error("Failed to delete old tutor photo:", err));
-      }
+    if (tutorProfile.profilePhotoPublicId) {
+      await deleteFromCloudinary(tutorProfile.profilePhotoPublicId);
+    } else if (tutorProfile.profilePhoto) {
+      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${tutorProfile.profilePhoto}`);
     }
-    const relativePath = `/uploads/tutors/${req.file.filename}`;
-    await TutorService.updateTutorProfilePhoto(id, relativePath);
-    const photoUrl = `${req.protocol}://${req.get("host")}${relativePath}`;
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/tutors",
+      publicId
+    );
+    await TutorService.updateTutorProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
     res.status(200).json({
       message: "Tutor profile photo uploaded successfully",
-      profilePhoto: relativePath,
-      profilePhotoUrl: photoUrl
+      profilePhoto: uploadResult.secure_url,
+      profilePhotoUrl: uploadResult.secure_url
     });
   } catch (error) {
-    if (req.file?.path && fs3.existsSync(req.file.path)) {
-      await fs3.promises.unlink(req.file.path).catch((err) => console.error("Error deleting uploaded file on error:", err));
+    next(error);
+  }
+};
+var uploadDocument = async (req, res, next) => {
+  try {
+    const { id, type } = req.params;
+    if (!type || !["degree", "nid", "certificate"].includes(type.toLowerCase())) {
+      return res.status(400).json({ message: "Invalid document type. Must be degree, nid, or certificate" });
     }
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded or file type is invalid." });
+    }
+    const tutorProfile = await TutorService.getTutorProfileOnly(id);
+    if (!tutorProfile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+    const docTypeEnum = type.toUpperCase();
+    const existingDoc = await TutorService.getTutorDocumentByType(id, docTypeEnum);
+    if (existingDoc?.publicId) {
+      await deleteFromCloudinary(existingDoc.publicId);
+    }
+    const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const publicId = `${sanitizedId}-${type}-${uniqueSuffix}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/certificates",
+      publicId
+    );
+    const result = await TutorService.upsertTutorDocument(
+      id,
+      docTypeEnum,
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
+    res.status(200).json({
+      message: `${type.charAt(0).toUpperCase() + type.slice(1)} uploaded successfully`,
+      data: result
+    });
+  } catch (error) {
     next(error);
   }
 };
@@ -693,7 +783,8 @@ var TutorController = {
   getMyTutorProfile: getMyTutorProfile2,
   getTutorById: getTutorById2,
   updateTutorProfile: updateTutorProfile2,
-  uploadPhoto: uploadPhoto2
+  uploadPhoto: uploadPhoto2,
+  uploadDocument
 };
 
 // src/modules/tutor/tutor.route.ts
@@ -719,6 +810,11 @@ router2.post(
   "/:id/upload-photo",
   uploadSingle("tutors", "photo"),
   TutorController.uploadPhoto
+);
+router2.post(
+  "/:id/documents/:type",
+  uploadSingle("certificates", "document"),
+  TutorController.uploadDocument
 );
 var tutorRouter = router2;
 
@@ -1707,11 +1803,275 @@ var getDashboardStats = async () => {
     recentBookings
   };
 };
+var getPendingTutors = async () => {
+  return prisma.tutorProfile.findMany({
+    where: {
+      verificationStatus: "PENDING"
+    },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          phone: true,
+          status: true
+        }
+      },
+      documents: true
+    },
+    orderBy: {
+      createdAt: "desc"
+    }
+  });
+};
+var approveTutor = async (tutorId) => {
+  const tutor = await prisma.tutorProfile.findUniqueOrThrow({
+    where: { id: tutorId },
+    include: { user: true }
+  });
+  const updatedTutor = await prisma.tutorProfile.update({
+    where: { id: tutorId },
+    data: {
+      verificationStatus: "APPROVED",
+      rejectionReason: null
+    },
+    include: {
+      user: true,
+      documents: true
+    }
+  });
+  await NotificationService.createNotification({
+    receiverId: tutor.userId,
+    receiverRole: "TUTOR",
+    title: "Profile Approved",
+    message: "Your tutor profile has been approved! You are now publicly visible and bookable.",
+    type: "TUTOR_PROFILE_APPROVED",
+    relatedId: tutor.id
+  });
+  return updatedTutor;
+};
+var rejectTutor = async (tutorId, rejectionReason) => {
+  const tutor = await prisma.tutorProfile.findUniqueOrThrow({
+    where: { id: tutorId },
+    include: { user: true }
+  });
+  const updatedTutor = await prisma.tutorProfile.update({
+    where: { id: tutorId },
+    data: {
+      verificationStatus: "REJECTED",
+      rejectionReason: rejectionReason || null
+    },
+    include: {
+      user: true,
+      documents: true
+    }
+  });
+  await NotificationService.createNotification({
+    receiverId: tutor.userId,
+    receiverRole: "TUTOR",
+    title: "Profile Rejected",
+    message: `Your tutor profile has been rejected. Reason: ${rejectionReason || "No details provided."}`,
+    type: "TUTOR_PROFILE_REJECTED",
+    relatedId: tutor.id
+  });
+  return updatedTutor;
+};
+var getUserGrowth = async (range, granularity) => {
+  const startDate = /* @__PURE__ */ new Date();
+  startDate.setDate(startDate.getDate() - range);
+  const users = await prisma.user.findMany({
+    where: {
+      createdAt: {
+        gte: startDate
+      }
+    },
+    select: {
+      createdAt: true,
+      role: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+  const groups = {};
+  users.forEach((user) => {
+    let key = "";
+    const date = new Date(user.createdAt);
+    if (granularity === "day") {
+      key = date.toISOString().split("T")[0];
+    } else if (granularity === "week") {
+      const day = date.getDay();
+      const diff = date.getDate() - day;
+      const startOfWeek = new Date(date.setDate(diff));
+      key = startOfWeek.toISOString().split("T")[0];
+    } else if (granularity === "month") {
+      key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    }
+    if (!groups[key]) {
+      groups[key] = { student: 0, tutor: 0, admin: 0, total: 0 };
+    }
+    const role = user.role.toLowerCase();
+    if (groups[key][role] !== void 0) {
+      groups[key][role]++;
+    }
+    groups[key].total++;
+  });
+  return Object.entries(groups).map(([date, data]) => ({
+    date,
+    ...data
+  }));
+};
+var getRevenueTrend = async (range, granularity) => {
+  const startDate = /* @__PURE__ */ new Date();
+  startDate.setDate(startDate.getDate() - range);
+  const bookings = await prisma.booking.findMany({
+    where: {
+      status: "COMPLETED",
+      createdAt: {
+        gte: startDate
+      }
+    },
+    select: {
+      createdAt: true,
+      startTime: true,
+      endTime: true,
+      tutor: {
+        select: {
+          hourlyRate: true
+        }
+      }
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+  const groups = {};
+  bookings.forEach((booking) => {
+    let key = "";
+    const date = new Date(booking.createdAt);
+    if (granularity === "day") {
+      key = date.toISOString().split("T")[0];
+    } else if (granularity === "week") {
+      const day = date.getDay();
+      const diff = date.getDate() - day;
+      const startOfWeek = new Date(date.setDate(diff));
+      key = startOfWeek.toISOString().split("T")[0];
+    } else if (granularity === "month") {
+      key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    }
+    const duration = (new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / (1e3 * 60 * 60);
+    const amount = duration * (booking.tutor?.hourlyRate || 0);
+    groups[key] = (groups[key] || 0) + amount;
+  });
+  return Object.entries(groups).map(([date, revenue]) => ({
+    date,
+    revenue: Math.round(revenue * 100) / 100
+  }));
+};
+var getBookingVolume = async (range, granularity) => {
+  const startDate = /* @__PURE__ */ new Date();
+  startDate.setDate(startDate.getDate() - range);
+  const bookings = await prisma.booking.findMany({
+    where: {
+      createdAt: {
+        gte: startDate
+      }
+    },
+    select: {
+      createdAt: true,
+      status: true
+    },
+    orderBy: {
+      createdAt: "asc"
+    }
+  });
+  const groups = {};
+  bookings.forEach((booking) => {
+    let key = "";
+    const date = new Date(booking.createdAt);
+    if (granularity === "day") {
+      key = date.toISOString().split("T")[0];
+    } else if (granularity === "week") {
+      const day = date.getDay();
+      const diff = date.getDate() - day;
+      const startOfWeek = new Date(date.setDate(diff));
+      key = startOfWeek.toISOString().split("T")[0];
+    } else if (granularity === "month") {
+      key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    }
+    if (!groups[key]) {
+      groups[key] = { confirmed: 0, completed: 0, cancelled: 0, total: 0 };
+    }
+    const status = booking.status.toLowerCase();
+    if (groups[key][status] !== void 0) {
+      groups[key][status]++;
+    }
+    groups[key].total++;
+  });
+  return Object.entries(groups).map(([date, data]) => ({
+    date,
+    ...data
+  }));
+};
+var getTopSubjects = async () => {
+  const subjects = await prisma.booking.groupBy({
+    by: ["subject"],
+    _count: {
+      subject: true
+    },
+    orderBy: {
+      _count: {
+        subject: "desc"
+      }
+    },
+    take: 10
+  });
+  return subjects.map((item) => ({
+    subject: item.subject,
+    count: item._count.subject
+  }));
+};
+var getTopTutors = async (minReviews) => {
+  return prisma.tutorProfile.findMany({
+    where: {
+      totalReviews: {
+        gte: minReviews
+      },
+      user: {
+        status: "ACTIVE"
+      }
+    },
+    orderBy: {
+      rating: "desc"
+    },
+    take: 10,
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true
+        }
+      }
+    }
+  });
+};
 var AdminService = {
   getAllUsers,
   updateUserStatus,
   getAllBookings,
-  getDashboardStats
+  getDashboardStats,
+  getPendingTutors,
+  approveTutor,
+  rejectTutor,
+  getUserGrowth,
+  getRevenueTrend,
+  getBookingVolume,
+  getTopSubjects,
+  getTopTutors
 };
 
 // src/modules/admin/admin.controller.ts
@@ -1769,11 +2129,99 @@ var getDashboardStats2 = async (req, res, next) => {
     next(error);
   }
 };
+var getPendingTutors2 = async (req, res, next) => {
+  try {
+    const result = await AdminService.getPendingTutors();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var approveTutor2 = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await AdminService.approveTutor(id);
+    res.status(200).json({
+      message: "Tutor profile approved successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+var rejectTutor2 = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { rejectionReason } = req.body;
+    const result = await AdminService.rejectTutor(id, rejectionReason);
+    res.status(200).json({
+      message: "Tutor profile rejected successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+var getUserGrowth2 = async (req, res, next) => {
+  try {
+    const range = parseInt(req.query.range) || 30;
+    const granularity = req.query.granularity || "day";
+    const result = await AdminService.getUserGrowth(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var getRevenueTrend2 = async (req, res, next) => {
+  try {
+    const range = parseInt(req.query.range) || 30;
+    const granularity = req.query.granularity || "day";
+    const result = await AdminService.getRevenueTrend(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var getBookingVolume2 = async (req, res, next) => {
+  try {
+    const range = parseInt(req.query.range) || 30;
+    const granularity = req.query.granularity || "day";
+    const result = await AdminService.getBookingVolume(range, granularity);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var getTopSubjects2 = async (req, res, next) => {
+  try {
+    const result = await AdminService.getTopSubjects();
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var getTopTutors2 = async (req, res, next) => {
+  try {
+    const minReviews = parseInt(req.query.minReviews) || 3;
+    const result = await AdminService.getTopTutors(minReviews);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
 var AdminController = {
   getAllUsers: getAllUsers2,
   updateUserStatus: updateUserStatus2,
   getAllBookings: getAllBookings2,
-  getDashboardStats: getDashboardStats2
+  getDashboardStats: getDashboardStats2,
+  getPendingTutors: getPendingTutors2,
+  approveTutor: approveTutor2,
+  rejectTutor: rejectTutor2,
+  getUserGrowth: getUserGrowth2,
+  getRevenueTrend: getRevenueTrend2,
+  getBookingVolume: getBookingVolume2,
+  getTopSubjects: getTopSubjects2,
+  getTopTutors: getTopTutors2
 };
 
 // src/modules/admin/admin.route.ts
@@ -1786,6 +2234,14 @@ router7.patch(
 );
 router7.get("/bookings", auth_default("ADMIN" /* ADMIN */), AdminController.getAllBookings);
 router7.get("/stats", auth_default("ADMIN" /* ADMIN */), AdminController.getDashboardStats);
+router7.get("/tutors/pending", auth_default("ADMIN" /* ADMIN */), AdminController.getPendingTutors);
+router7.patch("/tutors/:id/approve", auth_default("ADMIN" /* ADMIN */), AdminController.approveTutor);
+router7.patch("/tutors/:id/reject", auth_default("ADMIN" /* ADMIN */), AdminController.rejectTutor);
+router7.get("/analytics/user-growth", auth_default("ADMIN" /* ADMIN */), AdminController.getUserGrowth);
+router7.get("/analytics/revenue", auth_default("ADMIN" /* ADMIN */), AdminController.getRevenueTrend);
+router7.get("/analytics/booking-volume", auth_default("ADMIN" /* ADMIN */), AdminController.getBookingVolume);
+router7.get("/analytics/top-subjects", auth_default("ADMIN" /* ADMIN */), AdminController.getTopSubjects);
+router7.get("/analytics/top-tutors", auth_default("ADMIN" /* ADMIN */), AdminController.getTopTutors);
 var adminRouter = router7;
 
 // src/modules/stats/stats.route.ts
@@ -2078,7 +2534,6 @@ router10.patch(
 var notificationRouter = router10;
 
 // src/app.ts
-import path4 from "path";
 var app = express11();
 app.set("trust proxy", 1);
 var getCleanOrigins = () => {
@@ -2119,9 +2574,9 @@ app.use((req, res, next) => {
   });
   next();
 });
-app.use("/uploads", express11.static(path4.join(process.cwd(), "uploads")));
 app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);
 app.post("/api/students/:id/upload-photo", uploadSingle("students", "photo"), UserController.uploadPhoto);
+app.post("/api/tutors/:id/documents/:type", uploadSingle("certificates", "document"), TutorController.uploadDocument);
 app.all("/api/auth/*splat", toNodeHandler(auth));
 app.use("/api/v1/users", userRouter);
 app.use("/api/v1/tutors", tutorRouter);

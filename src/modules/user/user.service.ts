@@ -10,6 +10,7 @@ const getMe = async (userId: string) => {
       role: true,
       emailVerified: true,
       image: true,
+      profilePhoto: true,
       createdAt: true,
       updatedAt: true
     }
@@ -22,10 +23,10 @@ const getUserById = async (id: string) => {
   });
 };
 
-const updateUserProfilePhoto = async (id: string, profilePhoto: string) => {
+const updateUserProfilePhoto = async (id: string, profilePhoto: string, profilePhotoPublicId: string) => {
   return prisma.user.update({
     where: { id },
-    data: { profilePhoto },
+    data: { profilePhoto, profilePhotoPublicId },
   });
 };
 
