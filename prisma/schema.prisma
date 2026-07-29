@@ -79,6 +79,8 @@ model TutorProfile {
   reviews      Review[]
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   wishlistedBy Wishlist[]
+
+  @@index([verificationStatus, rating])
 }
 
 model Category {
@@ -98,23 +100,30 @@ model Availability {
   createdAt DateTime     @default(now())
   updatedAt DateTime     @default(now())
   tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@index([tutorId])
 }
 
 model Booking {
-  id        String        @id @default(cuid())
-  studentId String
-  tutorId   String
-  date      DateTime
-  startTime DateTime
-  endTime   DateTime
-  status    BookingStatus @default(CONFIRMED)
-  subject   String
-  notes     String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @default(now())
-  student   User          @relation("StudentBookings", fields: [studentId], references: [id])
-  tutor     TutorProfile  @relation(fields: [tutorId], references: [id])
-  review    Review?
+  id              String        @id @default(cuid())
+  studentId       String
+  tutorId         String
+  date            DateTime
+  startTime       DateTime
+  endTime         DateTime
+  status          BookingStatus @default(CONFIRMED)
+  subject         String
+  notes           String
+  meetingLink     String?
+  meetingPlatform MeetingPlatform?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @default(now())
+  student         User          @relation("StudentBookings", fields: [studentId], references: [id])
+  tutor           TutorProfile  @relation(fields: [tutorId], references: [id])
+  review          Review?
+
+  @@index([studentId, date])
+  @@index([tutorId, date])
 }
 
 model Review {
@@ -129,6 +138,8 @@ model Review {
   booking   Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   student   User         @relation(fields: [studentId], references: [id])
   tutor     TutorProfile @relation(fields: [tutorId], references: [id])
+
+  @@index([tutorId, createdAt])
 }
 
 model Wishlist {
@@ -216,4 +227,10 @@ model TutorDocument {
   tutor     TutorProfile      @relation(fields: [tutorId], references: [id], onDelete: Cascade)
 
   @@unique([tutorId, type])
+}
+
+enum MeetingPlatform {
+  GOOGLE_MEET
+  ZOOM
+  MS_TEAMS
 }

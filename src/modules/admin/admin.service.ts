@@ -6,6 +6,8 @@ const getAllUsers = async (filters: {
   search?: string;
   role?: string;
   status?: string;
+  page?: number;
+  limit?: number;
 }) => {
   const where: any = {};
 
@@ -24,29 +26,48 @@ const getAllUsers = async (filters: {
     where.status = filters.status;
   }
 
-  return prisma.user.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      image: true,
-      phone: true,
-      createdAt: true,
-      updatedAt: true,
-      tutorProfile: {
-        select: {
-          id: true,
-          rating: true,
-          totalReviews: true,
+  const page = filters.page || 1;
+  const limit = filters.limit || 10;
+  const skip = (page - 1) * limit;
+
+  const [total, data] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        image: true,
+        phone: true,
+        createdAt: true,
+        updatedAt: true,
+        tutorProfile: {
+          select: {
+            id: true,
+            rating: true,
+            totalReviews: true,
+          },
         },
       },
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: limit
+    })
+  ]);
+
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
 };
 
 
@@ -80,6 +101,8 @@ const getAllBookings = async (filters: {
   status?: string;
   studentId?: string;
   tutorId?: string;
+  page?: number;
+  limit?: number;
 }) => {
   const where: any = {};
 
@@ -95,33 +118,52 @@ const getAllBookings = async (filters: {
     where.tutorId = filters.tutorId;
   }
 
-  return prisma.booking.findMany({
-    where,
-    include: {
-      student: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
+  const page = filters.page || 1;
+  const limit = filters.limit || 10;
+  const skip = (page - 1) * limit;
+
+  const [total, data] = await Promise.all([
+    prisma.booking.count({ where }),
+    prisma.booking.findMany({
+      where,
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
         },
-      },
-      tutor: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
+        tutor: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+              },
             },
           },
         },
+        review: true,
       },
-      review: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip,
+      take: limit
+    })
+  ]);
+
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    }
+  };
 };
 
 const getDashboardStats = async () => {
@@ -202,28 +244,49 @@ const getDashboardStats = async () => {
   };
 };
 
-const getPendingTutors = async () => {
-  return prisma.tutorProfile.findMany({
-    where: {
-      verificationStatus: "PENDING"
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-          phone: true,
-          status: true
-        }
+const getPendingTutors = async (filters?: { page?: number; limit?: number }) => {
+  const where = {
+    verificationStatus: "PENDING" as const
+  };
+
+  const page = filters?.page || 1;
+  const limit = filters?.limit || 10;
+  const skip = (page - 1) * limit;
+
+  const [total, data] = await Promise.all([
+    prisma.tutorProfile.count({ where }),
+    prisma.tutorProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            phone: true,
+            status: true
+          }
+        },
+        documents: true
       },
-      documents: true
-    },
-    orderBy: {
-      createdAt: "desc"
+      orderBy: {
+        createdAt: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 
 const approveTutor = async (tutorId: string) => {

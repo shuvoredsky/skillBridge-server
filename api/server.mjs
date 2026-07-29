@@ -1,4 +1,5 @@
 // src/app.ts
+import "dotenv/config";
 import express11 from "express";
 import { toNodeHandler } from "better-auth/node";
 
@@ -106,18 +107,21 @@ function errorHandler(err, req, res, next) {
   let statusCode = 500;
   let errorMessage = "Internal Server Error";
   let errorDetails = err;
-  if (err instanceof Prisma.PrismaClientValidationError) {
+  if (err instanceof Error && !(err instanceof Prisma.PrismaClientKnownRequestError) && !(err instanceof Prisma.PrismaClientValidationError)) {
+    statusCode = 400;
+    errorMessage = err.message;
+  } else if (err instanceof Prisma.PrismaClientValidationError) {
     statusCode = 404;
     errorMessage = "You provide incorrect field type or missing fields";
   } else if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === "P2025") {
       statusCode = 400;
-      errorMessage: "An operation failed because it depends on one or more records that were";
+      errorMessage = "An operation failed because it depends on one or more records that were not found";
     } else if (err.code === "P2002") {
-      statusCode: 400;
-      errorMessage: "Unique constraint failed on the ";
+      statusCode = 400;
+      errorMessage = "This slot was just booked by someone else, please choose another time";
     } else if (err.code === "P2003") {
-      statusCode: 400;
+      statusCode = 400;
       errorMessage = "Foreign key constraints failed";
     }
   } else if (err instanceof Prisma.PrismaClientUnknownRequestError) {
@@ -126,14 +130,13 @@ function errorHandler(err, req, res, next) {
   } else if (err instanceof Prisma.PrismaClientInitializationError) {
     if (err.errorCode === "P1000") {
       statusCode = 401;
-      errorMessage = "Authenticaion failed, Please check your credential";
+      errorMessage = "Authentication failed, Please check your credential";
     } else if (err.errorCode === "P1001") {
       statusCode = 400;
       errorMessage = "Can't reach database server";
     }
   }
-  res.status(statusCode);
-  res.json({
+  res.status(statusCode).json({
     message: errorMessage,
     error: errorDetails
   });
@@ -151,56 +154,6 @@ function notFound(req, res) {
 
 // src/modules/user/user.route.ts
 import express from "express";
-
-// src/middleware/auth.ts
-var auth2 = (...roles) => {
-  return async (req, res, next) => {
-    try {
-      const session = await auth.api.getSession({
-        headers: new Headers(req.headers)
-      });
-      console.log("\u{1F510} Auth Check:", {
-        hasSession: !!session,
-        headers: req.headers.cookie ? "Cookie present" : "No cookie",
-        origin: req.headers.origin
-      });
-      if (!session) {
-        console.log("\u274C No session found");
-        return res.status(401).json({
-          message: "Unauthorized - No valid session"
-        });
-      }
-      if (!session.user) {
-        console.log("\u274C Session exists but no user");
-        return res.status(401).json({
-          message: "Unauthorized - Invalid session"
-        });
-      }
-      req.user = {
-        id: session.user.id,
-        email: session.user.email,
-        name: session.user.name,
-        role: session.user.role,
-        emailVerified: session.user.emailVerified
-      };
-      console.log("\u2705 User authenticated:", req.user.email, req.user.role);
-      if (roles.length && !roles.includes(req.user.role)) {
-        console.log("\u274C Forbidden:", req.user.role, "not in", roles);
-        return res.status(403).json({
-          message: "Forbidden: you don't have permission to access this resource"
-        });
-      }
-      next();
-    } catch (error) {
-      console.error("\u274C Auth error:", error);
-      return res.status(401).json({
-        message: "Authentication error",
-        error: process.env.NODE_ENV === "development" ? error : void 0
-      });
-    }
-  };
-};
-var auth_default = auth2;
 
 // src/modules/user/user.service.ts
 var getMe = async (userId) => {
@@ -236,22 +189,96 @@ var UserService = {
   updateUserProfilePhoto
 };
 
+// src/middleware/auth.ts
+var auth2 = (...roles) => {
+  return async (req, res, next) => {
+    try {
+      const session = await auth.api.getSession({
+        headers: new Headers(req.headers)
+      });
+      console.log("\u{1F510} Auth Check:", {
+        hasSession: !!session,
+        headers: req.headers.cookie ? "Cookie present" : "No cookie",
+        origin: req.headers.origin
+      });
+      if (!session) {
+        console.log("\u274C No session found");
+        return res.status(401).json({
+          message: "Unauthorized - No valid session"
+        });
+      }
+      if (!session.user) {
+        console.log("\u274C Session exists but no user");
+        return res.status(401).json({
+          message: "Unauthorized - Invalid session"
+        });
+      }
+      const dbUser = await UserService.getUserById(session.user.id);
+      if (!dbUser || dbUser.status === "BANNED") {
+        console.log("\u274C Authentication failed: User is banned or does not exist");
+        return res.status(403).json({
+          message: "Forbidden - Your account has been suspended"
+        });
+      }
+      req.user = {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.name,
+        role: session.user.role,
+        emailVerified: session.user.emailVerified
+      };
+      console.log("\u2705 User authenticated:", req.user.email, req.user.role);
+      if (roles.length && !roles.includes(req.user.role)) {
+        console.log("\u274C Forbidden:", req.user.role, "not in", roles);
+        return res.status(403).json({
+          message: "Forbidden: you don't have permission to access this resource"
+        });
+      }
+      next();
+    } catch (error) {
+      console.error("\u274C Auth error:", error);
+      return res.status(401).json({
+        message: "Authentication error",
+        error: process.env.NODE_ENV === "development" ? error : void 0
+      });
+    }
+  };
+};
+var auth_default = auth2;
+
 // src/lib/cloudinary.ts
 import { v2 as cloudinary } from "cloudinary";
+console.log("Cloudinary Config Loaded:", {
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "MISSING",
+  api_key_configured: !!process.env.CLOUDINARY_API_KEY,
+  api_secret_configured: !!process.env.CLOUDINARY_API_SECRET
+});
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET
 });
-var uploadToCloudinary = (fileBuffer, folder, publicId) => {
+var uploadToCloudinary = (fileBuffer, folder, publicId, isProfilePhoto = false) => {
   return new Promise((resolve, reject) => {
+    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+      return reject(
+        new Error("Cloudinary upload failed: Missing environment credentials.")
+      );
+    }
+    const uploadOptions = {
+      folder,
+      public_id: publicId,
+      overwrite: true,
+      resource_type: "image"
+      // Always images in this application
+    };
+    if (isProfilePhoto) {
+      uploadOptions.transformation = [
+        { width: 500, height: 500, crop: "limit" }
+      ];
+    }
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        public_id: publicId,
-        overwrite: true,
-        resource_type: "auto"
-      },
+      uploadOptions,
       (error, result) => {
         if (error) {
           return reject(error);
@@ -259,8 +286,14 @@ var uploadToCloudinary = (fileBuffer, folder, publicId) => {
         if (!result) {
           return reject(new Error("Cloudinary upload returned empty response"));
         }
+        const optimizedUrl = cloudinary.url(result.public_id, {
+          secure: true,
+          fetch_format: "auto",
+          quality: "auto",
+          version: result.version
+        });
         resolve({
-          secure_url: result.secure_url,
+          secure_url: optimizedUrl,
           public_id: result.public_id
         });
       }
@@ -269,6 +302,10 @@ var uploadToCloudinary = (fileBuffer, folder, publicId) => {
   });
 };
 var deleteFromCloudinary = async (publicId) => {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    console.warn("Skipping Cloudinary deletion check: Credentials missing.");
+    return;
+  }
   try {
     const result = await cloudinary.uploader.destroy(publicId);
     console.log(`Cloudinary deletion attempt for public ID: ${publicId}. Result:`, result);
@@ -311,12 +348,12 @@ var uploadPhoto = async (req, res, next) => {
       console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${user.profilePhoto}`);
     }
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const publicId = `student_${sanitizedId}`;
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/students",
-      publicId
+      "skillbridge/students/profile-photos",
+      publicId,
+      true
     );
     await UserService.updateUserProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
     res.status(200).json({
@@ -515,23 +552,40 @@ var getAllTutors = async (filters) => {
       gte: filters.minRating
     };
   }
-  return prisma.tutorProfile.findMany({
-    where,
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-          status: true
+  const page = filters.page || 1;
+  const limit = filters.limit || 9;
+  const skip = (page - 1) * limit;
+  const [total, data] = await Promise.all([
+    prisma.tutorProfile.count({ where }),
+    prisma.tutorProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            status: true
+          }
         }
-      }
-    },
-    orderBy: {
-      rating: "desc"
+      },
+      orderBy: {
+        rating: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 var getMyTutorProfile = async (userId) => {
   return prisma.tutorProfile.findFirstOrThrow({
@@ -654,13 +708,15 @@ var createTutorProfile2 = async (req, res, next) => {
 };
 var getAllTutors2 = async (req, res, next) => {
   try {
-    const { search, subject, minPrice, maxPrice, minRating } = req.query;
+    const { search, subject, minPrice, maxPrice, minRating, page, limit } = req.query;
     const filters = {
       search,
       subject,
       minPrice: minPrice ? Number(minPrice) : void 0,
       maxPrice: maxPrice ? Number(maxPrice) : void 0,
-      minRating: minRating ? Number(minRating) : void 0
+      minRating: minRating ? Number(minRating) : void 0,
+      page: page ? Number(page) : void 0,
+      limit: limit ? Number(limit) : void 0
     };
     const result = await TutorService.getAllTutors(filters);
     res.status(200).json(result);
@@ -720,12 +776,12 @@ var uploadPhoto2 = async (req, res, next) => {
       console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${tutorProfile.profilePhoto}`);
     }
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const publicId = `tutor_${sanitizedId}`;
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/tutors",
-      publicId
+      "skillbridge/tutors/profile-photos",
+      publicId,
+      true
     );
     await TutorService.updateTutorProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
     res.status(200).json({
@@ -756,12 +812,12 @@ var uploadDocument = async (req, res, next) => {
       await deleteFromCloudinary(existingDoc.publicId);
     }
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${type}-${uniqueSuffix}`;
+    const publicId = `doc_${type.toLowerCase()}_${sanitizedId}`;
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/certificates",
-      publicId
+      "skillbridge/tutors/documents",
+      publicId,
+      false
     );
     const result = await TutorService.upsertTutorDocument(
       id,
@@ -1075,6 +1131,7 @@ var availabilityRouter = router4;
 import express5 from "express";
 
 // src/modules/booking/booking.service.ts
+import { Prisma as Prisma2 } from "@prisma/client";
 var createBooking = async (studentId, payload) => {
   const tutorProfile = await prisma.tutorProfile.findUnique({
     where: { id: payload.tutorId }
@@ -1085,79 +1142,89 @@ var createBooking = async (studentId, payload) => {
   const bookingDate = /* @__PURE__ */ new Date(`${payload.date}T00:00:00Z`);
   const startDateTime = /* @__PURE__ */ new Date(`${payload.date}T${payload.startTime}:00Z`);
   const endDateTime = /* @__PURE__ */ new Date(`${payload.date}T${payload.endTime}:00Z`);
-  const existingBooking = await prisma.booking.findFirst({
-    where: {
-      tutorId: payload.tutorId,
-      date: bookingDate,
-      startTime: startDateTime,
-      status: {
-        in: ["CONFIRMED", "COMPLETED"]
+  try {
+    const booking = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "TutorProfile" WHERE id = ${payload.tutorId} FOR UPDATE`;
+      const existingBooking = await tx.booking.findFirst({
+        where: {
+          tutorId: payload.tutorId,
+          date: bookingDate,
+          startTime: startDateTime,
+          status: {
+            in: ["CONFIRMED", "COMPLETED"]
+          }
+        }
+      });
+      if (existingBooking) {
+        throw new Error("This time slot is already booked");
       }
-    }
-  });
-  if (existingBooking) {
-    throw new Error("This time slot is already booked");
-  }
-  const booking = await prisma.booking.create({
-    data: {
-      studentId,
-      tutorId: payload.tutorId,
-      date: bookingDate,
-      startTime: startDateTime,
-      endTime: endDateTime,
-      subject: payload.subject,
-      notes: payload.notes || "",
-      status: "CONFIRMED"
-    },
-    include: {
-      tutor: {
+      return tx.booking.create({
+        data: {
+          studentId,
+          tutorId: payload.tutorId,
+          date: bookingDate,
+          startTime: startDateTime,
+          endTime: endDateTime,
+          subject: payload.subject,
+          notes: payload.notes || "",
+          status: "CONFIRMED"
+        },
         include: {
-          user: {
+          tutor: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          student: {
             select: {
-              id: true,
-              name: true,
-              email: true
+              name: true
             }
           }
         }
-      },
-      student: {
-        select: {
-          name: true
-        }
-      }
-    }
-  });
-  await NotificationService.createNotification({
-    receiverId: studentId,
-    receiverRole: "STUDENT",
-    title: "Booking Confirmed",
-    message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
-    type: "BOOKING_CONFIRMED",
-    relatedId: booking.id
-  });
-  await NotificationService.createNotification({
-    receiverId: booking.tutor.userId,
-    receiverRole: "TUTOR",
-    title: "New Booking Received",
-    message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
-    type: "NEW_BOOKING_RECEIVED",
-    relatedId: booking.id
-  });
-  const admins = await prisma.user.findMany({
-    where: { role: "ADMIN" }
-  });
-  for (const admin of admins) {
+      });
+    });
     await NotificationService.createNotification({
-      receiverId: admin.id,
-      receiverRole: "ADMIN",
-      title: "New Booking Created",
-      message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
-      type: "NEW_BOOKING_CREATED",
+      receiverId: studentId,
+      receiverRole: "STUDENT",
+      title: "Booking Confirmed",
+      message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
+      type: "BOOKING_CONFIRMED",
       relatedId: booking.id
     });
+    await NotificationService.createNotification({
+      receiverId: booking.tutor.userId,
+      receiverRole: "TUTOR",
+      title: "New Booking Received",
+      message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
+      type: "NEW_BOOKING_RECEIVED",
+      relatedId: booking.id
+    });
+    const admins = await prisma.user.findMany({
+      where: { role: "ADMIN" }
+    });
+    for (const admin of admins) {
+      await NotificationService.createNotification({
+        receiverId: admin.id,
+        receiverRole: "ADMIN",
+        title: "New Booking Created",
+        message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
+        type: "NEW_BOOKING_CREATED",
+        relatedId: booking.id
+      });
+    }
+    return booking;
+  } catch (error) {
+    if (error instanceof Prisma2.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new Error("This slot was just booked by someone else, please choose another time");
+    }
+    throw error;
   }
-  return booking;
 };
 var getMyBookings = async (studentId) => {
   return prisma.booking.findMany({
@@ -1276,12 +1343,63 @@ var cancleBooking = async (bookingId, userId, userRole) => {
   });
   return updated;
 };
+var updateBookingMeetingLink = async (bookingId, tutorId, meetingLink, meetingPlatform) => {
+  try {
+    new URL(meetingLink);
+  } catch (_) {
+    throw new Error("Invalid meeting link URL format");
+  }
+  const urlLower = meetingLink.toLowerCase();
+  if (meetingPlatform === "GOOGLE_MEET" && !urlLower.includes("google")) {
+    throw new Error("URL does not match Google Meet platform selection");
+  }
+  if (meetingPlatform === "ZOOM" && !urlLower.includes("zoom")) {
+    throw new Error("URL does not match Zoom platform selection");
+  }
+  if (meetingPlatform === "MS_TEAMS" && !urlLower.includes("teams") && !urlLower.includes("microsoft")) {
+    throw new Error("URL does not match Microsoft Teams platform selection");
+  }
+  const booking = await prisma.booking.findFirstOrThrow({
+    where: { id: bookingId },
+    include: {
+      tutor: {
+        include: {
+          user: true
+        }
+      },
+      student: true
+    }
+  });
+  if (booking.tutorId !== tutorId) {
+    throw new Error("You are not authorized to update this booking");
+  }
+  if (booking.status !== "CONFIRMED") {
+    throw new Error("Meeting link can only be updated for confirmed bookings");
+  }
+  const updated = await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      meetingLink,
+      meetingPlatform
+    }
+  });
+  await NotificationService.createNotification({
+    receiverId: booking.studentId,
+    receiverRole: "STUDENT",
+    title: "Meeting Link Added",
+    message: `Your tutor ${booking.tutor.user.name} has added a meeting link (${meetingPlatform.replace("_", " ")}) for your upcoming session for ${booking.subject}.`,
+    type: "MEETING_LINK_ADDED",
+    relatedId: booking.id
+  });
+  return updated;
+};
 var BookingService = {
   createBooking,
   getMyBookings,
   getTutorSessions,
   updateBookingsStatus,
-  cancleBooking
+  cancleBooking,
+  updateBookingMeetingLink
 };
 
 // src/modules/booking/booking.controller.ts
@@ -1373,12 +1491,47 @@ var cancelBooking = async (req, res, next) => {
     next(error);
   }
 };
+var updateBookingMeetingLink2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+    const { meetingLink, meetingPlatform } = req.body;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (!meetingLink || !meetingPlatform) {
+      return res.status(400).json({ message: "meetingLink and meetingPlatform are required" });
+    }
+    if (!["GOOGLE_MEET", "ZOOM", "MS_TEAMS"].includes(meetingPlatform)) {
+      return res.status(400).json({ message: "Invalid meeting platform selection" });
+    }
+    const tutorProfile = await prisma.tutorProfile.findUnique({
+      where: { userId: user.id }
+    });
+    if (!tutorProfile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+    const result = await BookingService.updateBookingMeetingLink(
+      id,
+      tutorProfile.id,
+      meetingLink,
+      meetingPlatform
+    );
+    res.status(200).json({
+      message: "Meeting link updated successfully",
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 var BookingController = {
   createBooking: createBooking2,
   getMyBookings: getMyBookings2,
   getTutorSessions: getTutorSessions2,
   updateBookingStatus,
-  cancelBooking
+  cancelBooking,
+  updateBookingMeetingLink: updateBookingMeetingLink2
 };
 
 // src/modules/booking/booking.route.ts
@@ -1402,6 +1555,11 @@ router5.patch(
   "/:id/status",
   auth_default("TUTOR" /* TUTOR */),
   BookingController.updateBookingStatus
+);
+router5.patch(
+  "/:id/meeting-link",
+  auth_default("TUTOR" /* TUTOR */),
+  BookingController.updateBookingMeetingLink
 );
 router5.delete(
   "/:id",
@@ -1650,29 +1808,46 @@ var getAllUsers = async (filters) => {
   if (filters.status) {
     where.status = filters.status;
   }
-  return prisma.user.findMany({
-    where,
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      image: true,
-      phone: true,
-      createdAt: true,
-      updatedAt: true,
-      tutorProfile: {
-        select: {
-          id: true,
-          rating: true,
-          totalReviews: true
+  const page = filters.page || 1;
+  const limit = filters.limit || 10;
+  const skip = (page - 1) * limit;
+  const [total, data] = await Promise.all([
+    prisma.user.count({ where }),
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        image: true,
+        phone: true,
+        createdAt: true,
+        updatedAt: true,
+        tutorProfile: {
+          select: {
+            id: true,
+            rating: true,
+            totalReviews: true
+          }
         }
-      }
-    },
-    orderBy: {
-      createdAt: "desc"
+      },
+      orderBy: {
+        createdAt: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 var updateUserStatus = async (userId, status) => {
   const user = await prisma.user.findUniqueOrThrow({
@@ -1703,33 +1878,50 @@ var getAllBookings = async (filters) => {
   if (filters.tutorId) {
     where.tutorId = filters.tutorId;
   }
-  return prisma.booking.findMany({
-    where,
-    include: {
-      student: {
-        select: {
-          id: true,
-          name: true,
-          email: true
-        }
-      },
-      tutor: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true
+  const page = filters.page || 1;
+  const limit = filters.limit || 10;
+  const skip = (page - 1) * limit;
+  const [total, data] = await Promise.all([
+    prisma.booking.count({ where }),
+    prisma.booking.findMany({
+      where,
+      include: {
+        student: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        tutor: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
             }
           }
-        }
+        },
+        review: true
       },
-      review: true
-    },
-    orderBy: {
-      createdAt: "desc"
+      orderBy: {
+        createdAt: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 var getDashboardStats = async () => {
   const [
@@ -1803,28 +1995,46 @@ var getDashboardStats = async () => {
     recentBookings
   };
 };
-var getPendingTutors = async () => {
-  return prisma.tutorProfile.findMany({
-    where: {
-      verificationStatus: "PENDING"
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-          phone: true,
-          status: true
-        }
+var getPendingTutors = async (filters) => {
+  const where = {
+    verificationStatus: "PENDING"
+  };
+  const page = filters?.page || 1;
+  const limit = filters?.limit || 10;
+  const skip = (page - 1) * limit;
+  const [total, data] = await Promise.all([
+    prisma.tutorProfile.count({ where }),
+    prisma.tutorProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            phone: true,
+            status: true
+          }
+        },
+        documents: true
       },
-      documents: true
-    },
-    orderBy: {
-      createdAt: "desc"
+      orderBy: {
+        createdAt: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 var approveTutor = async (tutorId) => {
   const tutor = await prisma.tutorProfile.findUniqueOrThrow({
@@ -2077,11 +2287,13 @@ var AdminService = {
 // src/modules/admin/admin.controller.ts
 var getAllUsers2 = async (req, res, next) => {
   try {
-    const { search, role, status } = req.query;
+    const { search, role, status, page, limit } = req.query;
     const filters = {
       search,
       role,
-      status
+      status,
+      page: page ? Number(page) : void 0,
+      limit: limit ? Number(limit) : void 0
     };
     const result = await AdminService.getAllUsers(filters);
     res.status(200).json(result);
@@ -2109,11 +2321,13 @@ var updateUserStatus2 = async (req, res, next) => {
 };
 var getAllBookings2 = async (req, res, next) => {
   try {
-    const { status, studentId, tutorId } = req.query;
+    const { status, studentId, tutorId, page, limit } = req.query;
     const filters = {
       status,
       studentId,
-      tutorId
+      tutorId,
+      page: page ? Number(page) : void 0,
+      limit: limit ? Number(limit) : void 0
     };
     const result = await AdminService.getAllBookings(filters);
     res.status(200).json(result);
@@ -2131,7 +2345,12 @@ var getDashboardStats2 = async (req, res, next) => {
 };
 var getPendingTutors2 = async (req, res, next) => {
   try {
-    const result = await AdminService.getPendingTutors();
+    const { page, limit } = req.query;
+    const filters = {
+      page: page ? Number(page) : void 0,
+      limit: limit ? Number(limit) : void 0
+    };
+    const result = await AdminService.getPendingTutors(filters);
     res.status(200).json(result);
   } catch (error) {
     next(error);

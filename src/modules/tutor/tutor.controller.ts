@@ -30,7 +30,7 @@ const createTutorProfile = async(
 
 const getAllTutors = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { search, subject, minPrice, maxPrice, minRating } = req.query;
+    const { search, subject, minPrice, maxPrice, minRating, page, limit } = req.query;
 
     const filters = {
       search: search as string,
@@ -38,6 +38,8 @@ const getAllTutors = async (req: Request, res: Response, next: NextFunction) => 
       minPrice: minPrice ? Number(minPrice) : undefined,
       maxPrice: maxPrice ? Number(maxPrice) : undefined,
       minRating: minRating ? Number(minRating) : undefined,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     };
 
     const result = await TutorService.getAllTutors(filters);
@@ -130,13 +132,13 @@ const uploadPhoto = async (
 
     // 3. Upload to Cloudinary
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const publicId = `tutor_${sanitizedId}`;
 
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/tutors",
-      publicId
+      "skillbridge/tutors/profile-photos",
+      publicId,
+      true
     );
 
     // 4. Save secure URL and public ID
@@ -184,13 +186,13 @@ const uploadDocument = async (
 
     // 3. Upload new document to Cloudinary
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${type}-${uniqueSuffix}`;
+    const publicId = `doc_${type.toLowerCase()}_${sanitizedId}`;
 
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/certificates",
-      publicId
+      "skillbridge/tutors/documents",
+      publicId,
+      false
     );
 
     // 4. Save to Database

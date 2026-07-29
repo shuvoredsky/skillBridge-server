@@ -139,10 +139,57 @@ const cancelBooking = async (
   }
 };
 
+const updateBookingMeetingLink = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const user = req.user;
+    const { id } = req.params;
+    const { meetingLink, meetingPlatform } = req.body;
+
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!meetingLink || !meetingPlatform) {
+      return res.status(400).json({ message: "meetingLink and meetingPlatform are required" });
+    }
+
+    if (!["GOOGLE_MEET", "ZOOM", "MS_TEAMS"].includes(meetingPlatform)) {
+      return res.status(400).json({ message: "Invalid meeting platform selection" });
+    }
+
+    const tutorProfile = await prisma.tutorProfile.findUnique({
+      where: { userId: user.id },
+    });
+
+    if (!tutorProfile) {
+      return res.status(404).json({ message: "Tutor profile not found" });
+    }
+
+    const result = await BookingService.updateBookingMeetingLink(
+      id as string,
+      tutorProfile.id,
+      meetingLink as string,
+      meetingPlatform as "GOOGLE_MEET" | "ZOOM" | "MS_TEAMS"
+    );
+
+    res.status(200).json({
+      message: "Meeting link updated successfully",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const BookingController = {
   createBooking,
   getMyBookings,
   getTutorSessions,
   updateBookingStatus,
   cancelBooking,
+  updateBookingMeetingLink,
 };

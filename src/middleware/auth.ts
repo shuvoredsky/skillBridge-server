@@ -51,6 +51,15 @@ const auth = (...roles: UserRole[]) => {
         });
       }
 
+      // Fresh status check to lock out BANNED users promptly
+      const dbUser = await UserService.getUserById(session.user.id);
+      if (!dbUser || dbUser.status === "BANNED") {
+        console.log("❌ Authentication failed: User is banned or does not exist");
+        return res.status(403).json({
+          message: "Forbidden - Your account has been suspended"
+        });
+      }
+
       req.user = {
         id: session.user.id,
         email: session.user.email,

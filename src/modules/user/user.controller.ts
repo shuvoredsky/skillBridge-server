@@ -50,13 +50,13 @@ const uploadPhoto = async (
 
     // 3. Upload to Cloudinary
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const publicId = `${sanitizedId}-${uniqueSuffix}`;
+    const publicId = `student_${sanitizedId}`;
 
     const uploadResult = await uploadToCloudinary(
       req.file.buffer,
-      "skillbridge/students",
-      publicId
+      "skillbridge/students/profile-photos",
+      publicId,
+      true
     );
 
     // 4. Save secure URL and public ID

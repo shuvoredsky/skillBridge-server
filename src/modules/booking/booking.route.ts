@@ -33,6 +33,13 @@ router.patch(
 );
 
 
+router.patch(
+  "/:id/meeting-link",
+  auth(UserRole.TUTOR),
+  BookingController.updateBookingMeetingLink
+);
+
+
 router.delete(
   "/:id",
   auth(UserRole.STUDENT, UserRole.TUTOR, UserRole.ADMIN),

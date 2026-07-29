@@ -75,6 +75,8 @@ const getAllTutors = async (filters: {
   minPrice?: number;
   maxPrice?: number;
   minRating?: number;
+  page?: number;
+  limit?: number;
 }) => {
   // Fix: Only return tutors whose associated user account is ACTIVE (not BANNED) and profile is APPROVED
   const where: any = {
@@ -112,23 +114,42 @@ const getAllTutors = async (filters: {
     };
   }
 
-  return prisma.tutorProfile.findMany({
-    where,
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-          status: true
+  const page = filters.page || 1;
+  const limit = filters.limit || 9;
+  const skip = (page - 1) * limit;
+
+  const [total, data] = await Promise.all([
+    prisma.tutorProfile.count({ where }),
+    prisma.tutorProfile.findMany({
+      where,
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            status: true
+          }
         }
-      }
-    },
-    orderBy: {
-      rating: "desc"
+      },
+      orderBy: {
+        rating: "desc"
+      },
+      skip,
+      take: limit
+    })
+  ]);
+
+  return {
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
     }
-  });
+  };
 };
 
 

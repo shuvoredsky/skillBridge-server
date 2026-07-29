@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { NotificationService } from "../notification/notification.service";
+import { Prisma } from "@prisma/client";
 
 type CreateBookingPayload = {
     tutorId: string;
@@ -23,96 +24,106 @@ const createBooking = async (
         throw new Error("Tutor profile not found");
     }
 
-
     const bookingDate = new Date(`${payload.date}T00:00:00Z`);
     const startDateTime = new Date(`${payload.date}T${payload.startTime}:00Z`);
     const endDateTime = new Date(`${payload.date}T${payload.endTime}:00Z`);
 
-    
-    const existingBooking = await prisma.booking.findFirst({
-        where: {
-            tutorId: payload.tutorId,
-            date: bookingDate,
-            startTime: startDateTime,
-            status: {
-                in: ["CONFIRMED", "COMPLETED"]
+    try {
+        const booking = await prisma.$transaction(async (tx) => {
+            // 1. Lock the TutorProfile row to serialize concurrent booking attempts for this tutor
+            await tx.$queryRaw`SELECT id FROM "TutorProfile" WHERE id = ${payload.tutorId} FOR UPDATE`;
+
+            // 2. Check for concurrent booking inside the transaction
+            const existingBooking = await tx.booking.findFirst({
+                where: {
+                    tutorId: payload.tutorId,
+                    date: bookingDate,
+                    startTime: startDateTime,
+                    status: {
+                        in: ["CONFIRMED", "COMPLETED"]
+                    }
+                }
+            });
+
+            if (existingBooking) {
+                throw new Error("This time slot is already booked");
             }
-        }
-    });
 
-    if (existingBooking) {
-        throw new Error("This time slot is already booked");
-    }
-
-
-    const booking = await prisma.booking.create({
-        data: {
-            studentId,
-            tutorId: payload.tutorId,
-            date: bookingDate,
-            startTime: startDateTime,
-            endTime: endDateTime,
-            subject: payload.subject,
-            notes: payload.notes || "",
-            status: "CONFIRMED",
-        },
-        include: {
-            tutor: {
+            // 3. Create the booking inside the transaction
+            return tx.booking.create({
+                data: {
+                    studentId,
+                    tutorId: payload.tutorId,
+                    date: bookingDate,
+                    startTime: startDateTime,
+                    endTime: endDateTime,
+                    subject: payload.subject,
+                    notes: payload.notes || "",
+                    status: "CONFIRMED",
+                },
                 include: {
-                    user: {
+                    tutor: {
+                        include: {
+                            user: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    email: true
+                                }
+                            }
+                        }
+                    },
+                    student: {
                         select: {
-                            id: true,
-                            name: true,
-                            email: true
+                            name: true
                         }
                     }
                 }
-            },
-            student: {
-                select: {
-                    name: true
-                }
-            }
+            });
+        });
+
+        // 4. Send notifications after the transaction completes successfully
+        await NotificationService.createNotification({
+            receiverId: studentId,
+            receiverRole: "STUDENT",
+            title: "Booking Confirmed",
+            message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
+            type: "BOOKING_CONFIRMED",
+            relatedId: booking.id,
+        });
+
+        await NotificationService.createNotification({
+            receiverId: booking.tutor.userId,
+            receiverRole: "TUTOR",
+            title: "New Booking Received",
+            message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
+            type: "NEW_BOOKING_RECEIVED",
+            relatedId: booking.id,
+        });
+
+        const admins = await prisma.user.findMany({
+            where: { role: "ADMIN" }
+        });
+        for (const admin of admins) {
+            await NotificationService.createNotification({
+                receiverId: admin.id,
+                receiverRole: "ADMIN",
+                title: "New Booking Created",
+                message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
+                type: "NEW_BOOKING_CREATED",
+                relatedId: booking.id,
+            });
         }
-    });
 
-    // Notify student: Booking confirmed
-    await NotificationService.createNotification({
-      receiverId: studentId,
-      receiverRole: "STUDENT",
-      title: "Booking Confirmed",
-      message: `Your booking with ${booking.tutor.user.name} for ${payload.subject} is confirmed.`,
-      type: "BOOKING_CONFIRMED",
-      relatedId: booking.id,
-    });
+        return booking;
 
-    // Notify tutor: New booking received
-    await NotificationService.createNotification({
-      receiverId: booking.tutor.userId,
-      receiverRole: "TUTOR",
-      title: "New Booking Received",
-      message: `You have received a new booking from ${booking.student.name} for ${payload.subject}.`,
-      type: "NEW_BOOKING_RECEIVED",
-      relatedId: booking.id,
-    });
-
-    // Notify admins: New booking created
-    const admins = await prisma.user.findMany({
-      where: { role: "ADMIN" }
-    });
-    for (const admin of admins) {
-      await NotificationService.createNotification({
-        receiverId: admin.id,
-        receiverRole: "ADMIN",
-        title: "New Booking Created",
-        message: `A new booking has been created between student ${booking.student.name} and tutor ${booking.tutor.user.name}.`,
-        type: "NEW_BOOKING_CREATED",
-        relatedId: booking.id,
-      });
+    } catch (error: any) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            throw new Error("This slot was just booked by someone else, please choose another time");
+        }
+        throw error;
     }
-
-    return booking;
-}
+};
 
 const getMyBookings = async (studentId: string) => {
     return prisma.booking.findMany({
@@ -256,12 +267,79 @@ const cancleBooking = async (
     });
 
     return updated;
-}
+};
+
+const updateBookingMeetingLink = async (
+    bookingId: string,
+    tutorId: string,
+    meetingLink: string,
+    meetingPlatform: "GOOGLE_MEET" | "ZOOM" | "MS_TEAMS"
+) => {
+    // Basic URL validation
+    try {
+        new URL(meetingLink);
+    } catch (_) {
+        throw new Error("Invalid meeting link URL format");
+    }
+
+    // Lenient platform matching
+    const urlLower = meetingLink.toLowerCase();
+    if (meetingPlatform === "GOOGLE_MEET" && !urlLower.includes("google")) {
+        throw new Error("URL does not match Google Meet platform selection");
+    }
+    if (meetingPlatform === "ZOOM" && !urlLower.includes("zoom")) {
+        throw new Error("URL does not match Zoom platform selection");
+    }
+    if (meetingPlatform === "MS_TEAMS" && !urlLower.includes("teams") && !urlLower.includes("microsoft")) {
+        throw new Error("URL does not match Microsoft Teams platform selection");
+    }
+
+    const booking = await prisma.booking.findFirstOrThrow({
+        where: { id: bookingId },
+        include: {
+            tutor: {
+                include: {
+                    user: true
+                }
+            },
+            student: true
+        }
+    });
+
+    if (booking.tutorId !== tutorId) {
+        throw new Error("You are not authorized to update this booking");
+    }
+
+    if (booking.status !== "CONFIRMED") {
+        throw new Error("Meeting link can only be updated for confirmed bookings");
+    }
+
+    const updated = await prisma.booking.update({
+        where: { id: bookingId },
+        data: {
+            meetingLink,
+            meetingPlatform
+        }
+    });
+
+    // Notify student: Meeting link added/updated
+    await NotificationService.createNotification({
+        receiverId: booking.studentId,
+        receiverRole: "STUDENT",
+        title: "Meeting Link Added",
+        message: `Your tutor ${booking.tutor.user.name} has added a meeting link (${meetingPlatform.replace("_", " ")}) for your upcoming session for ${booking.subject}.`,
+        type: "MEETING_LINK_ADDED",
+        relatedId: booking.id,
+    });
+
+    return updated;
+};
 
 export const BookingService = {
     createBooking,
     getMyBookings,
     getTutorSessions,
     updateBookingsStatus,
-    cancleBooking
+    cancleBooking,
+    updateBookingMeetingLink
 }

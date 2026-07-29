@@ -7,12 +7,14 @@ const getAllUsers = async (
   next: NextFunction
 ) => {
   try {
-    const { search, role, status } = req.query;
+    const { search, role, status, page, limit } = req.query;
 
     const filters = {
       search: search as string,
       role: role as string,
       status: status as string,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     };
 
     const result = await AdminService.getAllUsers(filters);
@@ -55,12 +57,14 @@ const getAllBookings = async (
   next: NextFunction
 ) => {
   try {
-    const { status, studentId, tutorId } = req.query;
+    const { status, studentId, tutorId, page, limit } = req.query;
 
     const filters = {
       status: status as string,
       studentId: studentId as string,
       tutorId: tutorId as string,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
     };
 
     const result = await AdminService.getAllBookings(filters);
@@ -91,7 +95,12 @@ const getPendingTutors = async (
   next: NextFunction
 ) => {
   try {
-    const result = await AdminService.getPendingTutors();
+    const { page, limit } = req.query;
+    const filters = {
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    };
+    const result = await AdminService.getPendingTutors(filters);
     res.status(200).json(result);
   } catch (error) {
     next(error);
