@@ -1,6 +1,6 @@
 // src/app.ts
 import "dotenv/config";
-import express11 from "express";
+import express12 from "express";
 import { toNodeHandler } from "better-auth/node";
 
 // src/lib/auth.ts
@@ -610,6 +610,39 @@ var updateTutorProfile = async (userId, payload) => {
     data: payload
   });
 };
+var getRatingBreakdown = async (tutorId) => {
+  const groupResults = await prisma.review.groupBy({
+    by: ["rating"],
+    where: { tutorId },
+    _count: {
+      rating: true
+    }
+  });
+  const breakdown = {
+    5: { count: 0, percentage: 0 },
+    4: { count: 0, percentage: 0 },
+    3: { count: 0, percentage: 0 },
+    2: { count: 0, percentage: 0 },
+    1: { count: 0, percentage: 0 }
+  };
+  let totalCount = 0;
+  groupResults.forEach((group) => {
+    const rating = group.rating;
+    if (breakdown[rating]) {
+      const count = group._count.rating;
+      breakdown[rating].count = count;
+      totalCount += count;
+    }
+  });
+  if (totalCount > 0) {
+    Object.keys(breakdown).forEach((key) => {
+      const rating = parseInt(key);
+      const count = breakdown[rating].count;
+      breakdown[rating].percentage = Math.round(count / totalCount * 100);
+    });
+  }
+  return breakdown;
+};
 var getTutorById = async (tutorId) => {
   const tutor = await prisma.tutorProfile.findUniqueOrThrow({
     where: { id: tutorId },
@@ -642,7 +675,11 @@ var getTutorById = async (tutorId) => {
   if (tutor.verificationStatus !== "APPROVED" || tutor.user.status !== "ACTIVE") {
     throw new Error("Tutor profile is not publicly visible");
   }
-  return tutor;
+  const ratingBreakdown = await getRatingBreakdown(tutorId);
+  return {
+    ...tutor,
+    ratingBreakdown
+  };
 };
 var getTutorProfileOnly = async (id) => {
   return prisma.tutorProfile.findUnique({
@@ -2752,8 +2789,117 @@ router10.patch(
 );
 var notificationRouter = router10;
 
+// src/modules/recently-viewed/recently-viewed.route.ts
+import express11 from "express";
+
+// src/modules/recently-viewed/recently-viewed.service.ts
+var recordView = async (studentId, tutorId) => {
+  const tutor = await prisma.tutorProfile.findUnique({
+    where: { id: tutorId }
+  });
+  if (!tutor) {
+    const error = new Error("Tutor profile not found");
+    error.statusCode = 404;
+    throw error;
+  }
+  if (tutor.userId === studentId) {
+    return null;
+  }
+  return prisma.recentlyViewedTutor.upsert({
+    where: {
+      studentId_tutorId: {
+        studentId,
+        tutorId
+      }
+    },
+    update: {
+      viewedAt: /* @__PURE__ */ new Date()
+    },
+    create: {
+      studentId,
+      tutorId
+    }
+  });
+};
+var getRecentlyViewed = async (studentId) => {
+  return prisma.recentlyViewedTutor.findMany({
+    where: { studentId },
+    include: {
+      tutor: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: {
+      viewedAt: "desc"
+    },
+    take: 10
+  });
+};
+var RecentlyViewedService = {
+  recordView,
+  getRecentlyViewed
+};
+
+// src/modules/recently-viewed/recently-viewed.controller.ts
+var recordView2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const { tutorId } = req.params;
+    const result = await RecentlyViewedService.recordView(user.id, tutorId);
+    res.status(201).json({
+      message: "Tutor view recorded successfully",
+      data: result
+    });
+  } catch (error) {
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({ message: error.message || "Something went wrong" });
+  }
+};
+var getRecentlyViewed2 = async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const result = await RecentlyViewedService.getRecentlyViewed(user.id);
+    res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+var RecentlyViewedController = {
+  recordView: recordView2,
+  getRecentlyViewed: getRecentlyViewed2
+};
+
+// src/modules/recently-viewed/recently-viewed.route.ts
+var router11 = express11.Router();
+router11.get(
+  "/",
+  auth_default("STUDENT" /* STUDENT */),
+  RecentlyViewedController.getRecentlyViewed
+);
+router11.post(
+  "/:tutorId",
+  auth_default("STUDENT" /* STUDENT */),
+  RecentlyViewedController.recordView
+);
+var recentlyViewedRouter = router11;
+
 // src/app.ts
-var app = express11();
+var app = express12();
 app.set("trust proxy", 1);
 var getCleanOrigins = () => {
   const rawOrigins = [
@@ -2780,7 +2926,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Cookie"]
 }));
-app.use(express11.json());
+app.use(express12.json());
 app.use(cookieParser());
 app.use((req, res, next) => {
   console.log("\u{1F4E5} Request:", {
@@ -2807,6 +2953,7 @@ app.use("/api/v1/admin", adminRouter);
 app.use("/api/v1/stats", statsRouter);
 app.use("/api/v1/wishlist", wishlistRouter);
 app.use("/api/v1/notifications", notificationRouter);
+app.use("/api/v1/recently-viewed", recentlyViewedRouter);
 app.get("/", (req, res) => {
   res.send("SkillBridge API is running");
 });

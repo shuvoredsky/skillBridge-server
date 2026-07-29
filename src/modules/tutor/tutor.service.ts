@@ -183,6 +183,44 @@ const updateTutorProfile = async (
   });
 };
 
+const getRatingBreakdown = async (tutorId: string) => {
+  const groupResults = await prisma.review.groupBy({
+    by: ["rating"],
+    where: { tutorId },
+    _count: {
+      rating: true,
+    },
+  });
+
+  const breakdown: Record<number, { count: number; percentage: number }> = {
+    5: { count: 0, percentage: 0 },
+    4: { count: 0, percentage: 0 },
+    3: { count: 0, percentage: 0 },
+    2: { count: 0, percentage: 0 },
+    1: { count: 0, percentage: 0 },
+  };
+
+  let totalCount = 0;
+  groupResults.forEach((group) => {
+    const rating = group.rating;
+    if (breakdown[rating]) {
+      const count = group._count.rating;
+      breakdown[rating].count = count;
+      totalCount += count;
+    }
+  });
+
+  if (totalCount > 0) {
+    Object.keys(breakdown).forEach((key) => {
+      const rating = parseInt(key);
+      const count = breakdown[rating].count;
+      breakdown[rating].percentage = Math.round((count / totalCount) * 100);
+    });
+  }
+
+  return breakdown;
+};
+
 const getTutorById = async (tutorId: string) => {
   const tutor = await prisma.tutorProfile.findUniqueOrThrow({
     where: { id: tutorId },
@@ -217,7 +255,12 @@ const getTutorById = async (tutorId: string) => {
     throw new Error("Tutor profile is not publicly visible");
   }
 
-  return tutor;
+  const ratingBreakdown = await getRatingBreakdown(tutorId);
+
+  return {
+    ...tutor,
+    ratingBreakdown,
+  };
 };
 
 const getTutorProfileOnly = async (id: string) => {

@@ -26,6 +26,7 @@ model User {
   tutorProfile  TutorProfile?
   wishlist      Wishlist[]
   notifications Notification[]
+  recentlyViewed RecentlyViewedTutor[]
 }
 
 model Account {
@@ -79,6 +80,7 @@ model TutorProfile {
   reviews      Review[]
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   wishlistedBy Wishlist[]
+  recentlyViewedBy RecentlyViewedTutor[]
 
   @@index([verificationStatus, rating])
 }
@@ -227,6 +229,18 @@ model TutorDocument {
   tutor     TutorProfile      @relation(fields: [tutorId], references: [id], onDelete: Cascade)
 
   @@unique([tutorId, type])
+}
+
+model RecentlyViewedTutor {
+  id        String       @id @default(cuid())
+  studentId String
+  tutorId   String
+  viewedAt  DateTime     @default(now()) @updatedAt
+  student   User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, tutorId])
+  @@index([studentId, viewedAt(sort: Desc)])
 }
 
 enum MeetingPlatform {
