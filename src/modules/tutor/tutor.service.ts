@@ -264,15 +264,38 @@ const getTutorById = async (tutorId: string) => {
 };
 
 const getTutorProfileOnly = async (id: string) => {
-  return prisma.tutorProfile.findUnique({
-    where: { id },
+  return prisma.tutorProfile.findFirst({
+    where: {
+      OR: [
+        { id },
+        { userId: id }
+      ]
+    },
   });
 };
 
-const updateTutorProfilePhoto = async (id: string, profilePhoto: string, profilePhotoPublicId: string) => {
-  return prisma.tutorProfile.update({
-    where: { id },
-    data: { profilePhoto, profilePhotoPublicId },
+const updateTutorProfilePhoto = async (
+  tutorProfileId: string,
+  userId: string,
+  profilePhoto: string,
+  profilePhotoPublicId: string
+) => {
+  return prisma.$transaction(async (tx) => {
+    const updatedProfile = await tx.tutorProfile.update({
+      where: { id: tutorProfileId },
+      data: { profilePhoto, profilePhotoPublicId },
+    });
+
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        profilePhoto,
+        image: profilePhoto,
+        profilePhotoPublicId,
+      },
+    });
+
+    return updatedProfile;
   });
 };
 

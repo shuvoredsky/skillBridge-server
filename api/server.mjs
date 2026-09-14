@@ -682,14 +682,30 @@ var getTutorById = async (tutorId) => {
   };
 };
 var getTutorProfileOnly = async (id) => {
-  return prisma.tutorProfile.findUnique({
-    where: { id }
+  return prisma.tutorProfile.findFirst({
+    where: {
+      OR: [
+        { id },
+        { userId: id }
+      ]
+    }
   });
 };
-var updateTutorProfilePhoto = async (id, profilePhoto, profilePhotoPublicId) => {
-  return prisma.tutorProfile.update({
-    where: { id },
-    data: { profilePhoto, profilePhotoPublicId }
+var updateTutorProfilePhoto = async (tutorProfileId, userId, profilePhoto, profilePhotoPublicId) => {
+  return prisma.$transaction(async (tx) => {
+    const updatedProfile = await tx.tutorProfile.update({
+      where: { id: tutorProfileId },
+      data: { profilePhoto, profilePhotoPublicId }
+    });
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        profilePhoto,
+        image: profilePhoto,
+        profilePhotoPublicId
+      }
+    });
+    return updatedProfile;
   });
 };
 var upsertTutorDocument = async (tutorId, type, url, publicId) => {
@@ -820,7 +836,12 @@ var uploadPhoto2 = async (req, res, next) => {
       publicId,
       true
     );
-    await TutorService.updateTutorProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
+    await TutorService.updateTutorProfilePhoto(
+      tutorProfile.id,
+      tutorProfile.userId,
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
     res.status(200).json({
       message: "Tutor profile photo uploaded successfully",
       profilePhoto: uploadResult.secure_url,

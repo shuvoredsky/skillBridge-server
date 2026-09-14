@@ -141,8 +141,13 @@ const uploadPhoto = async (
       true
     );
 
-    // 4. Save secure URL and public ID
-    await TutorService.updateTutorProfilePhoto(id, uploadResult.secure_url, uploadResult.public_id);
+    // 4. Save secure URL and public ID on both TutorProfile and User models
+    await TutorService.updateTutorProfilePhoto(
+      tutorProfile.id,
+      tutorProfile.userId,
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
 
     res.status(200).json({
       message: "Tutor profile photo uploaded successfully",
