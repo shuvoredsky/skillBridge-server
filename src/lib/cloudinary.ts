@@ -1,16 +1,45 @@
 import { v2 as cloudinary } from "cloudinary";
 
+/**
+ * Resolves Cloudinary credentials from environment variables with fallback to common casing conventions.
+ */
+export const getCloudinaryCredentials = () => {
+  const cloud_name =
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    process.env.Cloude_Name ||
+    process.env.Cloud_Name ||
+    process.env.CLOUDE_NAME ||
+    process.env.CLOUDINARY_NAME;
+
+  const api_key =
+    process.env.CLOUDINARY_API_KEY ||
+    process.env.Cloudinary_Api_Key ||
+    process.env.CLOUDINARY_KEY;
+
+  const api_secret =
+    process.env.CLOUDINARY_API_SECRET ||
+    process.env.Cloudinary_APi_Secret ||
+    process.env.Cloudinary_Api_Secret ||
+    process.env.CLOUDINARY_SECRET;
+
+  return { cloud_name, api_key, api_secret };
+};
+
+// Initial config attempt
+const initCredentials = getCloudinaryCredentials();
+if (initCredentials.cloud_name && initCredentials.api_key && initCredentials.api_secret) {
+  cloudinary.config({
+    cloud_name: initCredentials.cloud_name,
+    api_key: initCredentials.api_key,
+    api_secret: initCredentials.api_secret,
+  });
+}
+
 // Safely log configuration presence without leaking secrets
 console.log("Cloudinary Config Loaded:", {
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || "MISSING",
-  api_key_configured: !!process.env.CLOUDINARY_API_KEY,
-  api_secret_configured: !!process.env.CLOUDINARY_API_SECRET,
-});
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name: initCredentials.cloud_name || "MISSING",
+  api_key_configured: !!initCredentials.api_key,
+  api_secret_configured: !!initCredentials.api_secret,
 });
 
 export { cloudinary };
@@ -30,16 +59,21 @@ export const uploadToCloudinary = (
   isProfilePhoto: boolean = false
 ): Promise<CloudinaryUploadResult> => {
   return new Promise((resolve, reject) => {
+    const { cloud_name, api_key, api_secret } = getCloudinaryCredentials();
+
     // Hardening check for credentials before attempting upload
-    if (
-      !process.env.CLOUDINARY_CLOUD_NAME ||
-      !process.env.CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_API_SECRET
-    ) {
+    if (!cloud_name || !api_key || !api_secret) {
       return reject(
         new Error("Cloudinary upload failed: Missing environment credentials.")
       );
     }
+
+    // Ensure Cloudinary is configured with resolved credentials
+    cloudinary.config({
+      cloud_name,
+      api_key,
+      api_secret,
+    });
 
     const uploadOptions: any = {
       folder: folder,
@@ -88,14 +122,19 @@ export const uploadToCloudinary = (
  * Deletes an asset from Cloudinary by its public ID.
  */
 export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
-  if (
-    !process.env.CLOUDINARY_CLOUD_NAME ||
-    !process.env.CLOUDINARY_API_KEY ||
-    !process.env.CLOUDINARY_API_SECRET
-  ) {
+  const { cloud_name, api_key, api_secret } = getCloudinaryCredentials();
+
+  if (!cloud_name || !api_key || !api_secret) {
     console.warn("Skipping Cloudinary deletion check: Credentials missing.");
     return;
   }
+
+  cloudinary.config({
+    cloud_name,
+    api_key,
+    api_secret,
+  });
+
   try {
     const result = await cloudinary.uploader.destroy(publicId);
     console.log(`Cloudinary deletion attempt for public ID: ${publicId}. Result:`, result);
