@@ -39,6 +39,7 @@ const getAllUsers = async (filters: {
         name: true,
         email: true,
         role: true,
+        status: true,
         image: true,
         phone: true,
         createdAt: true,
@@ -92,6 +93,7 @@ const updateUserStatus = async (
       name: true,
       email: true,
       role: true,
+      status: true,
     },
   });
 };

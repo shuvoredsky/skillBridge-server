@@ -1909,6 +1909,7 @@ var getAllUsers = async (filters) => {
         name: true,
         email: true,
         role: true,
+        status: true,
         image: true,
         phone: true,
         createdAt: true,
@@ -1952,7 +1953,8 @@ var updateUserStatus = async (userId, status) => {
       id: true,
       name: true,
       email: true,
-      role: true
+      role: true,
+      status: true
     }
   });
 };
