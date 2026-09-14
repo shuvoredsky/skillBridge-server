@@ -12,5 +12,16 @@ router.post(
   uploadSingle("site", "logo"),
   SettingsController.uploadLogo
 );
+router.post(
+  "/banner",
+  auth(UserRole.ADMIN),
+  uploadSingle("site", "banner"),
+  SettingsController.uploadBanner
+);
+router.patch(
+  "/text",
+  auth(UserRole.ADMIN),
+  SettingsController.updateTextSettings
+);
 
 export const settingsRouter = router;

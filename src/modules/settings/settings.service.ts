@@ -9,6 +9,10 @@ const getSiteSettings = async () => {
         siteName: "SkillBridge",
         logoUrl: null,
         logoPublicId: null,
+        bannerUrl: null,
+        bannerPublicId: null,
+        bannerTitle: null,
+        bannerSubtitle: null,
       },
     });
   }
@@ -26,7 +30,36 @@ const updateSiteLogo = async (logoUrl: string, logoPublicId: string) => {
   });
 };
 
+const updateSiteBanner = async (bannerUrl: string, bannerPublicId: string) => {
+  const existing = await getSiteSettings();
+  return prisma.siteSetting.update({
+    where: { id: existing.id },
+    data: {
+      bannerUrl,
+      bannerPublicId,
+    },
+  });
+};
+
+const updateSiteTextSettings = async (data: {
+  siteName?: string;
+  bannerTitle?: string;
+  bannerSubtitle?: string;
+}) => {
+  const existing = await getSiteSettings();
+  return prisma.siteSetting.update({
+    where: { id: existing.id },
+    data: {
+      ...(data.siteName !== undefined && { siteName: data.siteName }),
+      ...(data.bannerTitle !== undefined && { bannerTitle: data.bannerTitle }),
+      ...(data.bannerSubtitle !== undefined && { bannerSubtitle: data.bannerSubtitle }),
+    },
+  });
+};
+
 export const SettingsService = {
   getSiteSettings,
   updateSiteLogo,
+  updateSiteBanner,
+  updateSiteTextSettings,
 };

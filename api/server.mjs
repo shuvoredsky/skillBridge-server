@@ -2998,7 +2998,11 @@ var getSiteSettings = async () => {
         id: "site_config",
         siteName: "SkillBridge",
         logoUrl: null,
-        logoPublicId: null
+        logoPublicId: null,
+        bannerUrl: null,
+        bannerPublicId: null,
+        bannerTitle: null,
+        bannerSubtitle: null
       }
     });
   }
@@ -3014,9 +3018,32 @@ var updateSiteLogo = async (logoUrl, logoPublicId) => {
     }
   });
 };
+var updateSiteBanner = async (bannerUrl, bannerPublicId) => {
+  const existing = await getSiteSettings();
+  return prisma.siteSetting.update({
+    where: { id: existing.id },
+    data: {
+      bannerUrl,
+      bannerPublicId
+    }
+  });
+};
+var updateSiteTextSettings = async (data) => {
+  const existing = await getSiteSettings();
+  return prisma.siteSetting.update({
+    where: { id: existing.id },
+    data: {
+      ...data.siteName !== void 0 && { siteName: data.siteName },
+      ...data.bannerTitle !== void 0 && { bannerTitle: data.bannerTitle },
+      ...data.bannerSubtitle !== void 0 && { bannerSubtitle: data.bannerSubtitle }
+    }
+  });
+};
 var SettingsService = {
   getSiteSettings,
-  updateSiteLogo
+  updateSiteLogo,
+  updateSiteBanner,
+  updateSiteTextSettings
 };
 
 // src/modules/settings/settings.controller.ts
@@ -3064,9 +3091,61 @@ var uploadLogo = async (req, res, next) => {
     next(error);
   }
 };
+var uploadBanner = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No banner file provided or invalid file format."
+      });
+    }
+    const currentSettings = await SettingsService.getSiteSettings();
+    if (currentSettings.bannerPublicId) {
+      await deleteFromCloudinary(currentSettings.bannerPublicId);
+    }
+    const timestamp = Date.now();
+    const publicId = `site_banner_${timestamp}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/site/banner",
+      publicId,
+      false
+    );
+    const updatedSettings = await SettingsService.updateSiteBanner(
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
+    res.status(200).json({
+      success: true,
+      message: "Home page banner updated successfully",
+      data: updatedSettings
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+var updateTextSettings = async (req, res, next) => {
+  try {
+    const { siteName, bannerTitle, bannerSubtitle } = req.body;
+    const updatedSettings = await SettingsService.updateSiteTextSettings({
+      siteName,
+      bannerTitle,
+      bannerSubtitle
+    });
+    res.status(200).json({
+      success: true,
+      message: "Site text settings updated successfully",
+      data: updatedSettings
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 var SettingsController = {
   getSiteSettings: getSiteSettings2,
-  uploadLogo
+  uploadLogo,
+  uploadBanner,
+  updateTextSettings
 };
 
 // src/modules/settings/settings.route.ts
@@ -3077,6 +3156,17 @@ router12.post(
   auth_default("ADMIN" /* ADMIN */),
   uploadSingle("site", "logo"),
   SettingsController.uploadLogo
+);
+router12.post(
+  "/banner",
+  auth_default("ADMIN" /* ADMIN */),
+  uploadSingle("site", "banner"),
+  SettingsController.uploadBanner
+);
+router12.patch(
+  "/text",
+  auth_default("ADMIN" /* ADMIN */),
+  SettingsController.updateTextSettings
 );
 var settingsRouter = router12;
 
