@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { Request, Response, NextFunction } from "express";
 
-export type UploadDestination = "tutors" | "students" | "certificates";
+export type UploadDestination = "tutors" | "students" | "certificates" | "site";
 
 export const createMulterUpload = (destination: UploadDestination) => {
   const storage = multer.memoryStorage();

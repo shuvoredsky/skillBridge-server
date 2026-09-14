@@ -17,6 +17,7 @@ import { statsRouter } from "./modules/stats/stats.route";
 import { wishlistRouter } from "./modules/wishlist/wishlist.route";
 import { notificationRouter } from "./modules/notification/notification.route";
 import { recentlyViewedRouter } from "./modules/recently-viewed/recently-viewed.route";
+import { settingsRouter } from "./modules/settings/settings.route";
 import { uploadSingle } from "./config/multer";
 import { TutorController } from "./modules/tutor/tutor.controller";
 import { UserController } from "./modules/user/user.controller";
@@ -88,6 +89,7 @@ app.use("/api/v1/stats", statsRouter);
 app.use("/api/v1/wishlist", wishlistRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/recently-viewed", recentlyViewedRouter);
+app.use("/api/v1/settings", settingsRouter);
 
 app.get("/", (req, res) => {
   res.send("SkillBridge API is running");

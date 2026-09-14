@@ -1,6 +1,6 @@
 // src/app.ts
 import "dotenv/config";
-import express12 from "express";
+import express13 from "express";
 import { toNodeHandler } from "better-auth/node";
 
 // src/lib/auth.ts
@@ -2898,8 +2898,102 @@ router11.post(
 );
 var recentlyViewedRouter = router11;
 
+// src/modules/settings/settings.route.ts
+import express12 from "express";
+
+// src/modules/settings/settings.service.ts
+var getSiteSettings = async () => {
+  let setting = await prisma.siteSetting.findFirst();
+  if (!setting) {
+    setting = await prisma.siteSetting.create({
+      data: {
+        id: "site_config",
+        siteName: "SkillBridge",
+        logoUrl: null,
+        logoPublicId: null
+      }
+    });
+  }
+  return setting;
+};
+var updateSiteLogo = async (logoUrl, logoPublicId) => {
+  const existing = await getSiteSettings();
+  return prisma.siteSetting.update({
+    where: { id: existing.id },
+    data: {
+      logoUrl,
+      logoPublicId
+    }
+  });
+};
+var SettingsService = {
+  getSiteSettings,
+  updateSiteLogo
+};
+
+// src/modules/settings/settings.controller.ts
+var getSiteSettings2 = async (req, res, next) => {
+  try {
+    const settings = await SettingsService.getSiteSettings();
+    res.status(200).json({
+      success: true,
+      data: settings
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+var uploadLogo = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No logo file provided or invalid file format."
+      });
+    }
+    const currentSettings = await SettingsService.getSiteSettings();
+    if (currentSettings.logoPublicId) {
+      await deleteFromCloudinary(currentSettings.logoPublicId);
+    }
+    const timestamp = Date.now();
+    const publicId = `site_logo_${timestamp}`;
+    const uploadResult = await uploadToCloudinary(
+      req.file.buffer,
+      "skillbridge/site/logo",
+      publicId,
+      false
+    );
+    const updatedSettings = await SettingsService.updateSiteLogo(
+      uploadResult.secure_url,
+      uploadResult.public_id
+    );
+    res.status(200).json({
+      success: true,
+      message: "Site logo updated successfully",
+      data: updatedSettings
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+var SettingsController = {
+  getSiteSettings: getSiteSettings2,
+  uploadLogo
+};
+
+// src/modules/settings/settings.route.ts
+var router12 = express12.Router();
+router12.get("/", SettingsController.getSiteSettings);
+router12.post(
+  "/logo",
+  auth_default("ADMIN" /* ADMIN */),
+  uploadSingle("site", "logo"),
+  SettingsController.uploadLogo
+);
+var settingsRouter = router12;
+
 // src/app.ts
-var app = express12();
+var app = express13();
 app.set("trust proxy", 1);
 var getCleanOrigins = () => {
   const rawOrigins = [
@@ -2926,7 +3020,7 @@ app.use(cors({
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Cookie"]
 }));
-app.use(express12.json());
+app.use(express13.json());
 app.use(cookieParser());
 app.use((req, res, next) => {
   console.log("\u{1F4E5} Request:", {
@@ -2954,6 +3048,7 @@ app.use("/api/v1/stats", statsRouter);
 app.use("/api/v1/wishlist", wishlistRouter);
 app.use("/api/v1/notifications", notificationRouter);
 app.use("/api/v1/recently-viewed", recentlyViewedRouter);
+app.use("/api/v1/settings", settingsRouter);
 app.get("/", (req, res) => {
   res.send("SkillBridge API is running");
 });
