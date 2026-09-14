@@ -250,10 +250,14 @@ enum MeetingPlatform {
 }
 
 model SiteSetting {
-  id           String   @id @default("site_config")
-  siteName     String   @default("SkillBridge")
-  logoUrl      String?
-  logoPublicId String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id             String   @id @default("site_config")
+  siteName       String   @default("SkillBridge")
+  logoUrl        String?
+  logoPublicId   String?
+  bannerUrl      String?
+  bannerPublicId String?
+  bannerTitle    String?
+  bannerSubtitle String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
