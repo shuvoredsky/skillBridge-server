@@ -191,6 +191,12 @@ const getDashboardStats = async () => {
 
   
   const topTutors = await prisma.tutorProfile.findMany({
+    where: {
+      verificationStatus: "APPROVED",
+      user: {
+        status: "ACTIVE",
+      },
+    },
     take: 5,
     orderBy: { rating: "desc" },
     include: {

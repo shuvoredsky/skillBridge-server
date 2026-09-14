@@ -18,10 +18,21 @@ const createBooking = async (
     
     const tutorProfile = await prisma.tutorProfile.findUnique({
         where: { id: payload.tutorId },
+        include: {
+            user: {
+                select: {
+                    status: true,
+                },
+            },
+        },
     });
 
     if (!tutorProfile) {
         throw new Error("Tutor profile not found");
+    }
+
+    if (tutorProfile.verificationStatus !== "APPROVED" || tutorProfile.user?.status !== "ACTIVE") {
+        throw new Error("Cannot book session: Tutor profile is not active or verified");
     }
 
     const bookingDate = new Date(`${payload.date}T00:00:00Z`);

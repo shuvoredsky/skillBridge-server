@@ -1213,10 +1213,20 @@ import express5 from "express";
 import { Prisma as Prisma2 } from "@prisma/client";
 var createBooking = async (studentId, payload) => {
   const tutorProfile = await prisma.tutorProfile.findUnique({
-    where: { id: payload.tutorId }
+    where: { id: payload.tutorId },
+    include: {
+      user: {
+        select: {
+          status: true
+        }
+      }
+    }
   });
   if (!tutorProfile) {
     throw new Error("Tutor profile not found");
+  }
+  if (tutorProfile.verificationStatus !== "APPROVED" || tutorProfile.user?.status !== "ACTIVE") {
+    throw new Error("Cannot book session: Tutor profile is not active or verified");
   }
   const bookingDate = /* @__PURE__ */ new Date(`${payload.date}T00:00:00Z`);
   const startDateTime = /* @__PURE__ */ new Date(`${payload.date}T${payload.startTime}:00Z`);
@@ -2025,6 +2035,12 @@ var getDashboardStats = async () => {
     prisma.category.count()
   ]);
   const topTutors = await prisma.tutorProfile.findMany({
+    where: {
+      verificationStatus: "APPROVED",
+      user: {
+        status: "ACTIVE"
+      }
+    },
     take: 5,
     orderBy: { rating: "desc" },
     include: {
@@ -2603,10 +2619,17 @@ import express9 from "express";
 // src/modules/wishlist/wishlist.service.ts
 var addToWishlist = async (studentId, tutorId) => {
   const tutor = await prisma.tutorProfile.findUnique({
-    where: { id: tutorId }
+    where: { id: tutorId },
+    include: {
+      user: {
+        select: {
+          status: true
+        }
+      }
+    }
   });
-  if (!tutor) {
-    const error = new Error("Tutor profile not found");
+  if (!tutor || tutor.verificationStatus !== "APPROVED" || tutor.user?.status !== "ACTIVE") {
+    const error = new Error("Tutor profile not found or is no longer active");
     error.statusCode = 404;
     throw error;
   }
@@ -2669,7 +2692,15 @@ var removeFromWishlist = async (studentId, tutorId) => {
 };
 var getWishlist = async (studentId) => {
   return prisma.wishlist.findMany({
-    where: { studentId },
+    where: {
+      studentId,
+      tutor: {
+        verificationStatus: "APPROVED",
+        user: {
+          status: "ACTIVE"
+        }
+      }
+    },
     include: {
       tutor: {
         include: {
@@ -2837,10 +2868,17 @@ import express11 from "express";
 // src/modules/recently-viewed/recently-viewed.service.ts
 var recordView = async (studentId, tutorId) => {
   const tutor = await prisma.tutorProfile.findUnique({
-    where: { id: tutorId }
+    where: { id: tutorId },
+    include: {
+      user: {
+        select: {
+          status: true
+        }
+      }
+    }
   });
-  if (!tutor) {
-    const error = new Error("Tutor profile not found");
+  if (!tutor || tutor.verificationStatus !== "APPROVED" || tutor.user?.status !== "ACTIVE") {
+    const error = new Error("Tutor profile not found or is not active");
     error.statusCode = 404;
     throw error;
   }
@@ -2865,7 +2903,15 @@ var recordView = async (studentId, tutorId) => {
 };
 var getRecentlyViewed = async (studentId) => {
   return prisma.recentlyViewedTutor.findMany({
-    where: { studentId },
+    where: {
+      studentId,
+      tutor: {
+        verificationStatus: "APPROVED",
+        user: {
+          status: "ACTIVE"
+        }
+      }
+    },
     include: {
       tutor: {
         include: {

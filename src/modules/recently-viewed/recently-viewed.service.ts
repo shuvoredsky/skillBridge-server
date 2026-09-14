@@ -1,12 +1,19 @@
 import { prisma } from "../../lib/prisma";
 
 const recordView = async (studentId: string, tutorId: string) => {
-  // 1. Verify tutor exists
+  // 1. Verify tutor exists and is active/approved
   const tutor = await prisma.tutorProfile.findUnique({
     where: { id: tutorId },
+    include: {
+      user: {
+        select: {
+          status: true,
+        },
+      },
+    },
   });
-  if (!tutor) {
-    const error: any = new Error("Tutor profile not found");
+  if (!tutor || tutor.verificationStatus !== "APPROVED" || tutor.user?.status !== "ACTIVE") {
+    const error: any = new Error("Tutor profile not found or is not active");
     error.statusCode = 404;
     throw error;
   }
@@ -36,7 +43,15 @@ const recordView = async (studentId: string, tutorId: string) => {
 
 const getRecentlyViewed = async (studentId: string) => {
   return prisma.recentlyViewedTutor.findMany({
-    where: { studentId },
+    where: {
+      studentId,
+      tutor: {
+        verificationStatus: "APPROVED",
+        user: {
+          status: "ACTIVE",
+        },
+      },
+    },
     include: {
       tutor: {
         include: {
