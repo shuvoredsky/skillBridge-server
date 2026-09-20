@@ -25,7 +25,7 @@ const uploadPhoto = async (
   next: NextFunction
 ) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded or file type is invalid." });
@@ -44,8 +44,6 @@ const uploadPhoto = async (
     // 2. Delete old photo if it exists on Cloudinary, otherwise skip for local files
     if (user.profilePhotoPublicId) {
       await deleteFromCloudinary(user.profilePhotoPublicId);
-    } else if (user.profilePhoto) {
-      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${user.profilePhoto}`);
     }
 
     // 3. Upload to Cloudinary

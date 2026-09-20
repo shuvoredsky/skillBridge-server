@@ -11,7 +11,7 @@ const addToWishlist = async (
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId as string;
     const result = await WishlistService.addToWishlist(user.id, tutorId);
     res.status(201).json({
       message: "Tutor added to wishlist successfully",
@@ -33,7 +33,7 @@ const removeFromWishlist = async (
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId as string;
     await WishlistService.removeFromWishlist(user.id, tutorId);
     res.status(200).json({
       message: "Tutor removed from wishlist successfully",

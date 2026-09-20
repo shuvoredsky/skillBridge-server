@@ -196,26 +196,18 @@ var auth2 = (...roles) => {
       const session = await auth.api.getSession({
         headers: new Headers(req.headers)
       });
-      console.log("\u{1F510} Auth Check:", {
-        hasSession: !!session,
-        headers: req.headers.cookie ? "Cookie present" : "No cookie",
-        origin: req.headers.origin
-      });
       if (!session) {
-        console.log("\u274C No session found");
         return res.status(401).json({
           message: "Unauthorized - No valid session"
         });
       }
       if (!session.user) {
-        console.log("\u274C Session exists but no user");
         return res.status(401).json({
           message: "Unauthorized - Invalid session"
         });
       }
       const dbUser = await UserService.getUserById(session.user.id);
       if (!dbUser || dbUser.status === "BANNED") {
-        console.log("\u274C Authentication failed: User is banned or does not exist");
         return res.status(403).json({
           message: "Forbidden - Your account has been suspended"
         });
@@ -227,9 +219,7 @@ var auth2 = (...roles) => {
         role: session.user.role,
         emailVerified: session.user.emailVerified
       };
-      console.log("\u2705 User authenticated:", req.user.email, req.user.role);
       if (roles.length && !roles.includes(req.user.role)) {
-        console.log("\u274C Forbidden:", req.user.role, "not in", roles);
         return res.status(403).json({
           message: "Forbidden: you don't have permission to access this resource"
         });
@@ -262,11 +252,6 @@ if (initCredentials.cloud_name && initCredentials.api_key && initCredentials.api
     api_secret: initCredentials.api_secret
   });
 }
-console.log("Cloudinary Config Loaded:", {
-  cloud_name: initCredentials.cloud_name || "MISSING",
-  api_key_configured: !!initCredentials.api_key,
-  api_secret_configured: !!initCredentials.api_secret
-});
 var uploadToCloudinary = (fileBuffer, folder, publicId, isProfilePhoto = false) => {
   return new Promise((resolve, reject) => {
     const { cloud_name, api_key, api_secret } = getCloudinaryCredentials();
@@ -328,8 +313,7 @@ var deleteFromCloudinary = async (publicId) => {
     api_secret
   });
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    console.log(`Cloudinary deletion attempt for public ID: ${publicId}. Result:`, result);
+    await cloudinary.uploader.destroy(publicId);
   } catch (error) {
     console.error(`Failed to delete asset from Cloudinary for public ID ${publicId}:`, error);
   }
@@ -352,7 +336,7 @@ var getMe2 = async (req, res, next) => {
 };
 var uploadPhoto = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded or file type is invalid." });
     }
@@ -365,8 +349,6 @@ var uploadPhoto = async (req, res, next) => {
     }
     if (user.profilePhotoPublicId) {
       await deleteFromCloudinary(user.profilePhotoPublicId);
-    } else if (user.profilePhoto) {
-      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${user.profilePhoto}`);
     }
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
     const publicId = `student_${sanitizedId}`;
@@ -836,7 +818,7 @@ var getTutorById2 = async (req, res, next) => {
 };
 var uploadPhoto2 = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded or file type is invalid." });
     }
@@ -846,8 +828,6 @@ var uploadPhoto2 = async (req, res, next) => {
     }
     if (tutorProfile.profilePhotoPublicId) {
       await deleteFromCloudinary(tutorProfile.profilePhotoPublicId);
-    } else if (tutorProfile.profilePhoto) {
-      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${tutorProfile.profilePhoto}`);
     }
     const sanitizedId = id.replace(/[^a-zA-Z0-9_-]/g, "");
     const publicId = `tutor_${sanitizedId}`;
@@ -874,7 +854,8 @@ var uploadPhoto2 = async (req, res, next) => {
 };
 var uploadDocument = async (req, res, next) => {
   try {
-    const { id, type } = req.params;
+    const id = req.params.id;
+    const type = req.params.type;
     if (!type || !["degree", "nid", "certificate"].includes(type.toLowerCase())) {
       return res.status(400).json({ message: "Invalid document type. Must be degree, nid, or certificate" });
     }
@@ -2455,7 +2436,7 @@ var getPendingTutors2 = async (req, res, next) => {
 };
 var approveTutor2 = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
     const result = await AdminService.approveTutor(id);
     res.status(200).json({
       message: "Tutor profile approved successfully",
@@ -2467,7 +2448,7 @@ var approveTutor2 = async (req, res, next) => {
 };
 var rejectTutor2 = async (req, res, next) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id;
     const { rejectionReason } = req.body;
     const result = await AdminService.rejectTutor(id, rejectionReason);
     res.status(200).json({
@@ -2735,7 +2716,7 @@ var addToWishlist2 = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId;
     const result = await WishlistService.addToWishlist(user.id, tutorId);
     res.status(201).json({
       message: "Tutor added to wishlist successfully",
@@ -2752,7 +2733,7 @@ var removeFromWishlist2 = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId;
     await WishlistService.removeFromWishlist(user.id, tutorId);
     res.status(200).json({
       message: "Tutor removed from wishlist successfully"
@@ -2946,7 +2927,7 @@ var recordView2 = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId;
     const result = await RecentlyViewedService.recordView(user.id, tutorId);
     res.status(201).json({
       message: "Tutor view recorded successfully",
@@ -3202,17 +3183,6 @@ app.use(cors({
 }));
 app.use(express13.json());
 app.use(cookieParser());
-app.use((req, res, next) => {
-  console.log("\u{1F4E5} Request:", {
-    method: req.method,
-    url: req.url,
-    origin: req.headers.origin,
-    hasCookie: !!req.headers.cookie,
-    cookies: req.cookies
-    // Now this will work
-  });
-  next();
-});
 app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);
 app.post("/api/students/:id/upload-photo", uploadSingle("students", "photo"), UserController.uploadPhoto);
 app.post("/api/tutors/:id/documents/:type", uploadSingle("certificates", "document"), TutorController.uploadDocument);

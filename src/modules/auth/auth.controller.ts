@@ -8,12 +8,7 @@ export const verifyEmail = async (
 ) => {
   try {
     const { token } = req.body;
-
-    console.log("🔍 Received verification request");
-    console.log("📧 Token:", token);
-
     if (!token) {
-      console.log("❌ No token provided");
       return res.status(400).json({ message: "Token is required" });
     }
 
@@ -26,10 +21,7 @@ export const verifyEmail = async (
       },
     });
 
-    console.log("🔎 Verification record:", verification);
-
     if (!verification) {
-      console.log("❌ Invalid or expired token");
       return res.status(400).json({
         message: "Invalid or expired verification token",
       });
@@ -42,13 +34,9 @@ export const verifyEmail = async (
       data: { emailVerified: true },
     });
 
-    console.log("✅ User email verified:", user.email);
-
     await prisma.verification.delete({
       where: { id: verification.id },
     });
-
-    console.log("🗑️ Verification token deleted");
 
     res.status(200).json({
       message: "Email verified successfully",

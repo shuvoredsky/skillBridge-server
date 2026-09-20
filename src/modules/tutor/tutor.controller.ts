@@ -111,7 +111,7 @@ const uploadPhoto = async (
   next: NextFunction
 ) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
 
     if (!req.file) {
       return res.status(400).json({ message: "No file uploaded or file type is invalid." });
@@ -126,8 +126,6 @@ const uploadPhoto = async (
     // 2. Delete old photo if it exists on Cloudinary, otherwise skip for local files
     if (tutorProfile.profilePhotoPublicId) {
       await deleteFromCloudinary(tutorProfile.profilePhotoPublicId);
-    } else if (tutorProfile.profilePhoto) {
-      console.log(`Skipping Cloudinary deletion for pre-migration local photo path: ${tutorProfile.profilePhoto}`);
     }
 
     // 3. Upload to Cloudinary
@@ -165,7 +163,8 @@ const uploadDocument = async (
   next: NextFunction
 ) => {
   try {
-    const { id, type } = req.params;
+    const id = req.params.id as string;
+    const type = req.params.type as string;
 
     if (!type || !["degree", "nid", "certificate"].includes(type.toLowerCase())) {
       return res.status(400).json({ message: "Invalid document type. Must be degree, nid, or certificate" });

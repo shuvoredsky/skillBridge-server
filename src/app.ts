@@ -57,19 +57,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use(cookieParser()); // ✅ ADD THIS - Very Important!
-
-// ✅ Debugging middleware (remove after fixing)
-app.use((req, res, next) => {
-    console.log('📥 Request:', {
-        method: req.method,
-        url: req.url,
-        origin: req.headers.origin,
-        hasCookie: !!req.headers.cookie,
-        cookies: req.cookies, // Now this will work
-    });
-    next();
-});
+app.use(cookieParser()); // Cookie parser middleware
 
 // Direct endpoints for tutor and student photo upload (Backend Only)
 app.post("/api/tutors/:id/upload-photo", uploadSingle("tutors", "photo"), TutorController.uploadPhoto);

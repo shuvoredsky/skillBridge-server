@@ -27,25 +27,17 @@ const auth = (...roles: UserRole[]) => {
     try {
 
       const session = await betterAuth.api.getSession({
-  headers: new Headers(req.headers as Record<string, string>),
-});
-
-      console.log("🔐 Auth Check:", {
-        hasSession: !!session,
-        headers: req.headers.cookie ? "Cookie present" : "No cookie",
-        origin: req.headers.origin,
+        headers: new Headers(req.headers as Record<string, string>),
       });
 
       if (!session) {
-        console.log("❌ No session found");
         return res.status(401).json({
           message: "Unauthorized - No valid session"
         });
       }
 
-      // ✅ Additional validation
+      // Additional validation
       if (!session.user) {
-        console.log("❌ Session exists but no user");
         return res.status(401).json({
           message: "Unauthorized - Invalid session"
         });
@@ -54,7 +46,6 @@ const auth = (...roles: UserRole[]) => {
       // Fresh status check to lock out BANNED users promptly
       const dbUser = await UserService.getUserById(session.user.id);
       if (!dbUser || dbUser.status === "BANNED") {
-        console.log("❌ Authentication failed: User is banned or does not exist");
         return res.status(403).json({
           message: "Forbidden - Your account has been suspended"
         });
@@ -68,10 +59,7 @@ const auth = (...roles: UserRole[]) => {
         emailVerified: session.user.emailVerified
       };
 
-      console.log("✅ User authenticated:", req.user.email, req.user.role);
-
       if (roles.length && !roles.includes(req.user.role as UserRole)) {
-        console.log("❌ Forbidden:", req.user.role, "not in", roles);
         return res.status(403).json({
           message: "Forbidden: you don't have permission to access this resource"
         });

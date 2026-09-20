@@ -35,13 +35,6 @@ if (initCredentials.cloud_name && initCredentials.api_key && initCredentials.api
   });
 }
 
-// Safely log configuration presence without leaking secrets
-console.log("Cloudinary Config Loaded:", {
-  cloud_name: initCredentials.cloud_name || "MISSING",
-  api_key_configured: !!initCredentials.api_key,
-  api_secret_configured: !!initCredentials.api_secret,
-});
-
 export { cloudinary };
 
 export interface CloudinaryUploadResult {
@@ -136,8 +129,7 @@ export const deleteFromCloudinary = async (publicId: string): Promise<void> => {
   });
 
   try {
-    const result = await cloudinary.uploader.destroy(publicId);
-    console.log(`Cloudinary deletion attempt for public ID: ${publicId}. Result:`, result);
+    await cloudinary.uploader.destroy(publicId);
   } catch (error) {
     console.error(`Failed to delete asset from Cloudinary for public ID ${publicId}:`, error);
   }

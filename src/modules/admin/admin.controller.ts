@@ -113,7 +113,7 @@ const approveTutor = async (
   next: NextFunction
 ) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const result = await AdminService.approveTutor(id);
     res.status(200).json({
       message: "Tutor profile approved successfully",
@@ -130,7 +130,7 @@ const rejectTutor = async (
   next: NextFunction
 ) => {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const { rejectionReason } = req.body;
     const result = await AdminService.rejectTutor(id, rejectionReason);
     res.status(200).json({

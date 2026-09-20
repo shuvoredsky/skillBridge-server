@@ -11,7 +11,7 @@ const recordView = async (
     if (!user) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    const { tutorId } = req.params;
+    const tutorId = req.params.tutorId as string;
     const result = await RecentlyViewedService.recordView(user.id, tutorId);
     res.status(201).json({
       message: "Tutor view recorded successfully",

@@ -1,11 +1,14 @@
 node_modules
 # Keep environment variables out of version control
 .env
-
-/generated/prisma
-
-.vercel
+.env*
 .env*.local
+.env.production
+.env.development
+
+# Vercel & build artifacts
+.vercel
+/generated/prisma
 
 # Ignore uploaded files on local disk
 uploads/**/*
